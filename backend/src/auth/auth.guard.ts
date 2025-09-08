@@ -1,25 +1,16 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { ClerkStrategy } from './clerk.strategy';
-import { PrismaService } from '../db/prisma.service';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private clerk: ClerkStrategy, private prisma: PrismaService) {}
+  constructor(private clerk: ClerkStrategy) {}
 
   async canActivate(ctx: ExecutionContext) {
     const req = ctx.switchToHttp().getRequest();
-    const auth = await this.clerk.verify(req.headers.authorization);
-    let user = await this.prisma.user.findUnique({ where: { clerkUserId: auth.clerkId } });
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          clerkUserId: auth.clerkId,
-          email: auth.email ?? `user_${auth.clerkId}@local`,
-          role: auth.role === 'admin' ? 'admin' : 'client',
-        },
-      });
-    }
-    req.user = { dbId: user.id, clerkId: user.clerkUserId, role: user.role, email: user.email };
+    const authHeader = req.headers['authorization'] as string | undefined;
+
+    const user = await this.clerk.verifyBearerToken(authHeader);
+    req.user = user; // 👈 teraz je v req.user DB user
     return true;
   }
 }

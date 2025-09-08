@@ -1,24 +1,24 @@
-import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { json, urlencoded, raw } from 'express';
-import { ConfigService } from '@nestjs/config';
+import * as bodyParser from 'body-parser';
+
+import { json, raw } from 'body-parser';
+
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.use(json());
-  app.use(urlencoded({ extended: true }));
-  app.use('/stripe/webhook', raw({ type: 'application/json' })); // Stripe potrebuje RAW
-  const cfg = app.get(ConfigService);
-  const port = Number(cfg.get('PORT') ?? 3000);
-  await app.listen(port);
-  console.log(`Backend running on http://localhost:${port}`);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.enableCors({
-  origin: ['http://localhost:3001'],
-  credentials: true,
-});
+    origin: process.env.CORS_ORIGIN?.split(',') ?? ['http://localhost:3001'],
+    credentials: true,
+  });
+
+  // Stripe webhook musí dostať RAW body (žiadny JSON parser)
+app.use(json());
+app.use('/stripe/webhook', raw({ type: 'application/json' })); // len webhook
+
+  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
+  await app.listen(port);
+  // console.log(`API on http://localhost:${port}`);
 }
 bootstrap();
-
-

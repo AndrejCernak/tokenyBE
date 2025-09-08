@@ -1,36 +1,48 @@
+// src/auth/clerk.strategy.ts
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PrismaService } from '../db/prisma.service';
 import { verifyToken } from '@clerk/backend';
 
 @Injectable()
 export class ClerkStrategy {
-  async verify(authHeader?: string) {
-    const mode = process.env.AUTH_MODE ?? 'clerk';
+  constructor(private prisma: PrismaService) {}
+
+  async verifyBearerToken(authHeader?: string) {
     if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing Authorization: Bearer <token>');
+      throw new UnauthorizedException('Missing Bearer token');
     }
-    const token = authHeader.slice(7);
+    const token = authHeader.slice('Bearer '.length);
 
-    // DEV režim: Bearer dev:<user-id>:<role>
-    if (mode === 'dev' && token.startsWith('dev:')) {
-      const [, userId, role] = token.split(':');
-      return {
-        clerkId: userId || 'dev-user',
-        email: `dev_${userId ?? 'user'}@local`,
-        role: (role === 'admin' ? 'admin' : 'client') as 'admin' | 'client',
-      };
-    }
-
-    // Produkčný režim: verifikácia cez Clerk
     try {
-      const verified: any = await verifyToken(token, {});
-      const claims = verified?.claims ?? verified?.payload ?? {};
-      const clerkId = verified?.sub ?? claims?.sub ?? claims?.userId;
-      return {
-        clerkId,
-        email: claims?.email as string | undefined,
-        role: (claims?.role as 'admin' | 'client') ?? 'client',
-      };
-    } catch {
+      // verifyToken vráti objekt s payload (typ je unknown → treba any)
+      const { payload } = await verifyToken(token, {
+        secretKey: process.env.CLERK_SECRET_KEY!, // 🔑
+      });
+
+      const clerkUserId = (payload as any).sub as string | undefined;
+      if (!clerkUserId) {
+        throw new UnauthorizedException('Invalid token: missing sub');
+      }
+
+      const email =
+        (payload as any).email_addresses?.[0]?.email_address ??
+        (payload as any).email ??
+        null;
+
+      // 🔑 upsert používateľa do DB
+      const user = await this.prisma.user.upsert({
+        where: { clerkUserId },
+        update: { email: email ?? undefined },
+        create: {
+          clerkUserId,
+          email: email ?? `${clerkUserId}@unknown.local`,
+          role: 'client',
+        },
+      });
+
+      return user;
+    } catch (err) {
+      console.error('Clerk verify error:', err);
       throw new UnauthorizedException('Invalid Clerk token');
     }
   }
