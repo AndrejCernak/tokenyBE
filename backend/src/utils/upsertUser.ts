@@ -1,9 +1,12 @@
 // src/utils/upsertUser.ts
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
+import { Prisma } from "@prisma/client";
 
-export async function upsertUser(clerkUserId: string, email?: string) {
-  return prisma.user.upsert({
+export function upsertUser(
+  tx: Prisma.TransactionClient,
+  clerkUserId: string,
+  email?: string,
+) {
+  return tx.user.upsert({
     where: { clerkUserId },
     update: {},
     create: {

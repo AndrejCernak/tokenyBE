@@ -7,7 +7,6 @@ import { ClerkStrategy } from '../auth/clerk.strategy';
 import { PrismaService } from '../db/prisma.service';
 import { CallService } from './call.service';
 import { TickerService } from './ticker.service';
-import { randomUUID } from 'crypto';
 
 type AuthedSocket = Socket & { user?: { dbId: string, role: 'admin'|'client' } };
 
@@ -27,14 +26,11 @@ export class CallGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: AuthedSocket) {
     try {
-      const token = client.handshake.auth?.token || client.handshake.headers.authorization?.toString().replace(/^Bearer\s+/i,'');
-      const auth = await this.clerk.verify(`Bearer ${token}`);
-      let user = await this.prisma.user.findUnique({ where: { clerkUserId: auth.clerkId } });
-      if (!user) {
-        user = await this.prisma.user.create({
-          data: { clerkUserId: auth.clerkId, email: auth.email ?? `user_${auth.clerkId}@local`, role: auth.role === 'admin' ? 'admin' : 'client' },
-        });
-      }
+      const raw =
+        (client.handshake.auth?.token as string | undefined) ||
+        (client.handshake.headers.authorization as string | undefined);
+      const authHeader = raw?.startsWith('Bearer ') ? raw : raw ? `Bearer ${raw}` : undefined;
+      const user = await this.clerk.verifyBearerToken(authHeader);
       client.user = { dbId: user.id, role: user.role };
       this.online.set(user.id, client.id);
       client.emit('online', { me: user.id });

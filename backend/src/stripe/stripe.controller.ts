@@ -63,15 +63,7 @@ export class StripeController {
         if (exists) return;
 
         // 🔑 Uisti sa, že máme používateľa v DB (User.id) – podľa Clerk ID
-        const user = await tx.user.upsert({
-          where: { clerkUserId },
-          update: {},
-          create: {
-            clerkUserId,
-            email: email ?? `${clerkUserId}@unknown.local`,
-            role: 'client',
-          },
-        });
+        const user = await upsertUser(tx, clerkUserId, email);
 
         if (flowType === 'ADMIN') {
           // nákup priamo od admina – počet tokenov je v metadata
