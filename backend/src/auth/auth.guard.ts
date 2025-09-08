@@ -10,7 +10,12 @@ export class AuthGuard implements CanActivate {
     const authHeader = req.headers['authorization'] as string | undefined;
 
     const user = await this.clerk.verifyBearerToken(authHeader);
-    req.user = user; // 👈 teraz je v req.user DB user
+    req.user = {
+      dbId: user.id,
+      clerkUserId: user.clerkUserId,
+      email: user.email,
+      role: user.role,
+    }; // 👈 teraz je v req.user len potrebné info
     return true;
   }
 }
