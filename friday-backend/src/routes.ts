@@ -2,6 +2,34 @@
 import express, { Request, Response } from "express";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { MAX_PRIMARY_TOKENS_PER_USER } from "./config";
+import { jwtVerify, createRemoteJWKSet } from "jose";
+import { createClerkClient } from "@clerk/backend";
+
+const clerk = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+});
+
+
+
+const ISSUER = process.env.CLERK_ISSUER;
+const JWKS = ISSUER ? createRemoteJWKSet(new URL(`${ISSUER}/.well-known/jwks.json`)) : null;
+
+async function getUserIdFromAuthHeader(req: express.Request): Promise<string | null> {
+  try {
+    const auth = req.header("authorization") || req.header("Authorization");
+    if (!auth?.startsWith("Bearer ")) return null;
+    const token = auth.slice("Bearer ".length);
+    if (!JWKS || !ISSUER) return null;
+    const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUER });
+    return (payload.sub as string) || null;
+  } catch (e) {
+    console.error("JWT verify error:", e);
+    return null;
+  }
+}
+
+
+
 
 export default function fridayRoutes(prisma: PrismaClient) {
   const router = express.Router();
@@ -22,6 +50,8 @@ export default function fridayRoutes(prisma: PrismaClient) {
     });
   }
 
+
+  
   // ========== ADMIN ==========
   // Mint tokenov (bez auth – pridaj si middleware podľa potreby)
   router.post("/admin/mint", async (req: Request, res: Response) => {
@@ -62,6 +92,35 @@ export default function fridayRoutes(prisma: PrismaClient) {
       return res.status(500).json({ success: false, message: "Server error" });
     }
   });
+
+   router.post("/sync-user", async (req, res) => {
+    const userId = await getUserIdFromAuthHeader(req);
+    if (!userId) return res.status(401).json({ error: "Unauthenticated" });
+
+    try {
+      // sync user to DB
+      await ensureUser(userId);
+
+      // sync role to Clerk
+      try {
+        const u = await clerk.users.getUser(userId);
+        if (!(u.publicMetadata as any)?.role) {
+          await clerk.users.updateUser(userId, {
+            publicMetadata: { ...(u.publicMetadata || {}), role: "client" },
+          });
+          console.log(`🔑 Clerk: nastavil som rolu "client" pre user ${userId}`);
+        }
+      } catch (e) {
+        console.error("clerk update role failed:", e);
+      }
+
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error("sync-user error:", e);
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
+
 
   // Nastavenie ceny v pokladnici
   router.post("/admin/set-price", async (req: Request, res: Response) => {
@@ -120,6 +179,8 @@ export default function fridayRoutes(prisma: PrismaClient) {
       return res.status(500).json({ success: false, message: "Server error" });
     }
   });
+
+
 
   // Zostatok používateľa
   router.get("/balance/:userId", async (req: Request, res: Response) => {
@@ -242,6 +303,7 @@ export default function fridayRoutes(prisma: PrismaClient) {
     }
   });
 
+  
   // Kúpa z burzy (sekundárny obchod)
   router.post("/buy-listing", async (req: Request, res: Response) => {
     const { buyerId, listingId } = (req.body || {}) as { buyerId?: string; listingId?: string };
@@ -382,6 +444,8 @@ export default function fridayRoutes(prisma: PrismaClient) {
       return res.status(500).json({ success: false, message: "Server error" });
     }
   });
+
+
 
   // Zrušenie listingu
   router.post("/cancel-listing", async (req: Request, res: Response) => {
