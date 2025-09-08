@@ -1,0 +1,144 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum FridayTokenStatus {
+  active
+  listed
+  spent
+}
+
+enum FridayListingStatus {
+  open
+  sold
+  cancelled
+}
+
+enum TransactionType {
+  friday_purchase
+  friday_trade_buy
+  friday_trade_sell
+}
+
+model User {
+  id            String           @id @db.VarChar(191) // napr. Clerk userId
+  tokens        FridayToken[]
+  listings      FridayListing[]  @relation("UserListings")
+  tradesSold    FridayTrade[]    @relation("TradeSeller")
+  tradesBought  FridayTrade[]    @relation("TradeBuyer")
+  transactions  Transaction[]
+  purchaseItems FridayPurchaseItem[]
+}
+
+model FridaySettings {
+  id              Int       @id  // používaj fixne id=1
+  currentPriceEur Decimal   @db.Decimal(10, 2)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model FridayToken {
+  id               String             @id @default(cuid()) @db.VarChar(191)
+  issuedYear       Int
+  minutesRemaining Int                @default(60)
+  status           FridayTokenStatus  @default(active)
+
+  // DOPLNENÉ: používaš to v routes.ts → updateMany({ data: { originalPriceEur: ... }})
+  originalPriceEur Decimal?           @db.Decimal(10, 2)
+
+  ownerId String?        @db.VarChar(191)
+  owner   User?          @relation(fields: [ownerId], references: [id])
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  listings      FridayListing[]
+  trades        FridayTrade[]
+  purchaseItems FridayPurchaseItem[]
+
+  @@index([ownerId, status])
+  @@index([issuedYear, status])
+}
+
+model FridayListing {
+  id        String               @id @default(cuid()) @db.VarChar(191)
+  tokenId   String               @unique @db.VarChar(191)
+  token     FridayToken          @relation(fields: [tokenId], references: [id])
+
+  sellerId  String               @db.VarChar(191)
+  seller    User                 @relation("UserListings", fields: [sellerId], references: [id])
+
+  priceEur  Decimal              @db.Decimal(10, 2)
+  status    FridayListingStatus  @default(open)
+
+  createdAt DateTime             @default(now())
+  closedAt  DateTime?
+
+  trades    FridayTrade[]
+
+  @@index([status, createdAt])
+  @@index([sellerId])
+}
+
+model FridayTrade {
+  id              String         @id @default(cuid()) @db.VarChar(191)
+
+  listingId       String         @db.VarChar(191)
+  listing         FridayListing  @relation(fields: [listingId], references: [id])
+
+  tokenId         String         @db.VarChar(191)
+  token           FridayToken    @relation(fields: [tokenId], references: [id])
+
+  sellerId        String         @db.VarChar(191)
+  seller          User           @relation("TradeSeller", fields: [sellerId], references: [id])
+
+  buyerId         String         @db.VarChar(191)
+  buyer           User           @relation("TradeBuyer", fields: [buyerId], references: [id])
+
+  priceEur        Decimal        @db.Decimal(10, 2)
+  platformFeeEur  Decimal        @db.Decimal(10, 2)
+
+  createdAt       DateTime       @default(now())
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([createdAt])
+}
+
+model Transaction {
+  id           String          @id @default(cuid()) @db.VarChar(191)
+  userId       String          @db.VarChar(191)
+  user         User            @relation(fields: [userId], references: [id])
+
+  type         TransactionType
+  amountEur    Decimal         @db.Decimal(10, 2)
+  secondsDelta Int
+  note         String?         @db.VarChar(191)
+
+  createdAt    DateTime        @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// DOPLNENÉ: chýbal model, keď voláš prisma.fridayPurchaseItem...
+model FridayPurchaseItem {
+  id            String      @id @default(cuid()) @db.VarChar(191)
+
+  userId        String      @db.VarChar(191)
+  user          User        @relation(fields: [userId], references: [id])
+
+  tokenId       String      @db.VarChar(191)
+  token         FridayToken @relation(fields: [tokenId], references: [id])
+
+  unitPriceEur  Decimal     @db.Decimal(10, 2)
+  createdAt     DateTime    @default(now())
+
+  @@index([userId, createdAt])
+  @@index([tokenId])
+}
