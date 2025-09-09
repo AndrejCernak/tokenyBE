@@ -4,6 +4,8 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import { MAX_PRIMARY_TOKENS_PER_USER } from "./config";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 import { createClerkClient } from "@clerk/backend";
+import Stripe from "stripe";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 const clerk = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY!,
@@ -180,6 +182,115 @@ export default function fridayRoutes(prisma: PrismaClient) {
     }
   });
 
+  router.post("/payments/checkout/treasury", async (req, res) => {
+  try {
+    const { userId, quantity, year } = (req.body || {}) as { userId?: string; quantity?: number; year?: number | string };
+    if (!userId || !Number.isInteger(quantity) || quantity! <= 0) {
+      return res.status(400).json({ message: "Missing or invalid userId/quantity" });
+    }
+    await ensureUser(userId);
+
+    const settings = await ensureSettings();
+    const unitPrice = Number(settings?.currentPriceEur || 0);
+    if (unitPrice <= 0) return res.status(400).json({ message: "Treasury price not set" });
+
+    const y = Number(year) || new Date().getFullYear();
+
+    // limit 20 ks / user / rok – rovnaká validácia ako v /purchase
+    const ownedThisYear = await prisma.fridayToken.count({
+      where: { ownerId: userId, issuedYear: y, status: { in: ["active", "listed"] } },
+    });
+    if (ownedThisYear + quantity! > MAX_PRIMARY_TOKENS_PER_USER) {
+      return res.status(400).json({ message: `Primary limit is ${MAX_PRIMARY_TOKENS_PER_USER} tokens per user for year ${y}` });
+    }
+
+    // dostupnosť v pokladnici – rovnaké kritérium ako v /purchase
+    const available = await prisma.fridayToken.count({ where: { ownerId: null, issuedYear: y, status: "active" } });
+    if (available < quantity!) return res.status(400).json({ message: "Not enough tokens in treasury" });
+
+    // Založ Payment
+    const amount = unitPrice * quantity!;
+    const payment = await prisma.payment.create({
+      data: { buyerId: userId, type: "treasury", quantity, year: y, amountEur: amount, status: "pending" },
+    });
+
+    // Stripe Checkout
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      currency: "eur",
+      line_items: [{
+        price_data: {
+          currency: "eur",
+          unit_amount: Math.round(unitPrice * 100),
+          product_data: { name: `Piatkový token (${y})` },
+        },
+        quantity,
+      }],
+      success_url: `${process.env.APP_URL}/?payment=success`,
+      cancel_url: `${process.env.APP_URL}/?payment=cancel`,
+      metadata: {
+        type: "treasury",
+        buyerId: userId,
+        quantity: String(quantity),
+        year: String(y),
+        paymentId: payment.id,
+      },
+    });
+
+    await prisma.payment.update({ where: { id: payment.id }, data: { stripeSessionId: session.id } });
+    return res.json({ url: session.url });
+  } catch (e) {
+    console.error("POST /payments/checkout/treasury", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// === Stripe Checkout: burza (listing) ===
+router.post("/payments/checkout/listing", async (req, res) => {
+  try {
+    const { buyerId, listingId } = (req.body || {}) as { buyerId?: string; listingId?: string };
+    if (!buyerId || !listingId) return res.status(400).json({ message: "Missing buyerId/listingId" });
+    await ensureUser(buyerId);
+
+    const listing = await prisma.fridayListing.findUnique({ where: { id: listingId } });
+    if (!listing || listing.status !== "open") return res.status(400).json({ message: "Listing not available" });
+    if (listing.sellerId === buyerId) return res.status(400).json({ message: "Cannot buy own listing" });
+
+    const unit = Number(listing.priceEur);
+
+    const payment = await prisma.payment.create({
+      data: { buyerId, listingId, type: "listing", amountEur: unit, status: "pending" },
+    });
+
+    // Jednoduchá verzia (bez Stripe Connect) – peniaze idú na tvoj účet
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      currency: "eur",
+      line_items: [{
+        price_data: {
+          currency: "eur",
+          unit_amount: Math.round(unit * 100),
+          product_data: { name: `Token z burzy` },
+        },
+        quantity: 1,
+      }],
+      success_url: `${process.env.APP_URL}/?payment=success`,
+      cancel_url: `${process.env.APP_URL}/?payment=cancel`,
+      metadata: {
+        type: "listing",
+        buyerId,
+        listingId,
+        paymentId: payment.id,
+      },
+    });
+
+    await prisma.payment.update({ where: { id: payment.id }, data: { stripeSessionId: session.id } });
+    return res.json({ url: session.url });
+  } catch (e) {
+    console.error("POST /payments/checkout/listing", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
 
 
   // Zostatok používateľa

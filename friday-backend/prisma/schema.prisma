@@ -142,3 +142,19 @@ model FridayPurchaseItem {
   @@index([userId, createdAt])
   @@index([tokenId])
 }
+
+model Payment {
+  id                  String   @id @default(cuid()) @db.VarChar(191)
+  buyerId             String   @db.VarChar(191)
+  listingId           String?  @db.VarChar(191)      // null pri pokladnici
+  type                String   @db.VarChar(32)       // "treasury" | "listing"
+  quantity            Int?                             // len pri pokladnici
+  year                Int?                             // len pri pokladnici
+  amountEur           Decimal  @db.Decimal(10, 2)
+  applicationFeeEur   Decimal? @db.Decimal(10, 2)    // ak budeš mať províziu
+  stripeSessionId     String?  @db.VarChar(191)
+  stripePaymentIntent String?  @db.VarChar(191)
+  status              String   @db.VarChar(32) @default("pending") // pending | succeeded | failed
+  createdAt           DateTime @default(now())
+  metadata            Json?
+}
