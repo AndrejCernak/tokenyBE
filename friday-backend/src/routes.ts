@@ -245,6 +245,76 @@ export default function fridayRoutes(prisma: PrismaClient) {
   }
 });
 
+// HOVORY ENDPOINTY
+// === HOVORY ===
+
+// Štart hovoru
+router.post("/calls/start", async (req: Request, res: Response) => {
+  const { callerId, advisorId } = req.body;
+
+  const today = new Date();
+  const isFriday = today.getDay() === 5; // 5 = piatok
+  let usedToken: string | null = null;
+
+  if (isFriday) {
+    // klient musí mať token
+    const token = await prisma.fridayToken.findFirst({
+      where: { ownerId: callerId, status: "active", minutesRemaining: { gt: 0 } },
+    });
+
+    if (!token) {
+      return res.status(403).json({ success: false, message: "V piatok potrebuješ token." });
+    }
+
+    usedToken = token.id;
+
+    // token spotrebujeme
+    await prisma.fridayToken.update({
+      where: { id: token.id },
+      data: { status: "spent" },
+    });
+  }
+
+  const call = await prisma.callLog.create({
+    data: {
+      callerId,
+      advisorId,
+      startedAt: new Date(),
+      usedToken,
+    },
+  });
+
+  return res.json({ success: true, callId: call.id });
+});
+
+// Ukončenie hovoru
+router.post("/calls/end", async (req: Request, res: Response) => {
+  const { callId } = req.body;
+  const call = await prisma.callLog.findUnique({ where: { id: callId } });
+  if (!call) return res.status(404).json({ success: false, message: "Call not found" });
+
+  const endedAt = new Date();
+  const duration = Math.floor((endedAt.getTime() - call.startedAt.getTime()) / 1000);
+
+  const updated = await prisma.callLog.update({
+    where: { id: callId },
+    data: { endedAt, duration },
+  });
+
+  return res.json({ success: true, call: updated });
+});
+
+// História hovorov pre usera
+router.get("/calls/:userId", async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  const calls = await prisma.callLog.findMany({
+    where: { OR: [{ callerId: userId }, { advisorId: userId }] },
+    orderBy: { startedAt: "desc" },
+  });
+  return res.json({ success: true, calls });
+});
+
+
 // === Stripe Checkout: burza (listing) ===
 router.post("/payments/checkout/listing", async (req, res) => {
   try {

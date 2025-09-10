@@ -158,3 +158,14 @@ model Payment {
   createdAt           DateTime @default(now())
   metadata            Json?
 }
+
+
+model CallLog {
+  id        String   @id @default(uuid())
+  callerId  String
+  advisorId String
+  startedAt DateTime
+  endedAt   DateTime?
+  duration  Int?      // v sekundách
+  usedToken String?   // ID tokenu, ak bol použitý v piatok
+}
