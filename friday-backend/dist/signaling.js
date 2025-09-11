@@ -1,19 +1,17 @@
-import express from "express";
-import { createServer } from "http";
-import { WebSocketServer } from "ws";
+const express = require("express");
+const { createServer } = require("http");
+const { WebSocketServer } = require("ws");
 
 const app = express();
 const server = createServer(app);
 
-// Testovacia HTTP route → overíš cez https://tokenybe-1.onrender.com
+// Test route
 app.get("/", (_, res) => {
-  res.send("✅ Signaling server is running");
+  res.send("✅ Signaling server running");
 });
 
 // WebSocket server na /ws
 const wss = new WebSocketServer({ noServer: true });
-
-// Uloženie pripojených klientov
 const clients = {};
 
 server.on("upgrade", (req, socket, head) => {
