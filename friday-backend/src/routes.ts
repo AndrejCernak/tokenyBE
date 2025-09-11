@@ -5,6 +5,7 @@ import { MAX_PRIMARY_TOKENS_PER_USER } from "./config";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 import { createClerkClient } from "@clerk/backend";
 import Stripe from "stripe";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 const clerk = createClerkClient({
@@ -181,6 +182,38 @@ export default function fridayRoutes(prisma: PrismaClient) {
       return res.status(500).json({ success: false, message: "Server error" });
     }
   });
+
+
+// Single Sign-On pre iOS app → Burza
+router.get("/sso", async (req: Request, res: Response) => {
+  const { token } = req.query;
+  if (!token || typeof token !== "string") {
+    return res.status(400).send("Missing token");
+  }
+
+  try {
+    // Over Clerk session token
+    const session = await clerk.sessions.getSession(token);
+    if (!session || !session.userId) {
+      return res.status(401).send("Invalid token");
+    }
+
+    const userId = session.userId;
+
+    // zapíš do DB, ak ešte nemáš
+    await ensureUser(userId);
+
+    // redirectni na frontend burzy
+    return res.redirect(`${process.env.APP_URL}/burza?userId=${userId}`);
+  } catch (err) {
+    console.error("SSO error:", err);
+    return res.status(401).send("Invalid token");
+  }
+});
+
+
+
+
 
   router.post("/payments/checkout/treasury", async (req, res) => {
   try {
