@@ -185,6 +185,7 @@ export default function fridayRoutes(prisma: PrismaClient) {
 
 
 // Single Sign-On pre iOS app → Burza
+// src/friday/routes.ts
 router.get("/sso", async (req: Request, res: Response) => {
   const { token } = req.query;
   if (!token || typeof token !== "string") {
@@ -199,20 +200,15 @@ router.get("/sso", async (req: Request, res: Response) => {
     }
 
     const userId = session.userId;
-
-    // zapíš do DB, ak ešte nemáš
     await ensureUser(userId);
 
-    // redirectni na frontend burzy
-    return res.redirect(`${process.env.APP_URL}/burza?userId=${userId}`);
+    // 🚀 redirect na frontend callback
+    return res.redirect(`${process.env.APP_URL}/sso/callback?sessionId=${session.id}`);
   } catch (err) {
     console.error("SSO error:", err);
     return res.status(401).send("Invalid token");
   }
 });
-
-
-
 
 
   router.post("/payments/checkout/treasury", async (req, res) => {
