@@ -175,27 +175,26 @@ function fridayRoutes(prisma) {
   }
 
   try {
-    // over JWT voči Clerk public keys
-    const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUER });
-    const userId = payload.sub;
-    const sessionId = payload.sid; // Clerk sessionId z JWT payloadu
+    // Over Clerk token a získaj session
+    const session = await clerk.sessions.verifySessionToken(token);
 
-    if (!userId || !sessionId) {
+    if (!session || !session.id || !session.userId) {
       return res.status(401).send("Invalid token");
     }
 
     // sync usera do DB
-    await ensureUser(userId);
+    await ensureUser(session.userId);
 
-    // presmeruj na frontend burzy → Next.js
+    // presmeruj na frontend s reálnym Clerk sessionId
     return res.redirect(
-      `${process.env.APP_URL}/sso/callback?sessionId=${sessionId}`
+      `${process.env.APP_URL}/sso/callback?sessionId=${session.id}`
     );
   } catch (err) {
     console.error("SSO error:", err);
     return res.status(401).send("Invalid token");
   }
 });
+
 
 
     router.post("/payments/checkout/treasury", async (req, res) => {
