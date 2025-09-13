@@ -172,31 +172,25 @@ function fridayRoutes(prisma) {
   }
 
   try {
-    // over token voči Clerk
-    const session = await verifyToken(token, {
+    const { payload } = await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY,
-      issuer: process.env.CLERK_ISSUER,
     });
 
-    const userId = session.sub;
-    const sessionId = session.sid;
-
-    if (!userId || !sessionId) {
+    const userId = payload.sub;
+    if (!userId) {
       return res.status(401).send("Invalid token");
     }
 
-    // sync usera do DB
     await ensureUser(userId);
 
-    // presmeruj na frontend s reálnym Clerk sessionId
-    return res.redirect(
-      `${process.env.APP_URL}/sso/callback?sessionId=${sessionId}`
-    );
+    // Pošli token rovno na frontend
+    return res.redirect(`${process.env.APP_URL}/sso/callback?token=${token}`);
   } catch (err) {
     console.error("SSO error:", err);
     return res.status(401).send("Invalid token");
   }
 });
+
 
 
 
