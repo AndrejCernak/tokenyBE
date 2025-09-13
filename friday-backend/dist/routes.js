@@ -160,34 +160,30 @@ function fridayRoutes(prisma) {
         }
     });
     router.get("/sso", async (req, res) => {
-    const token = req.query.token;
-    if (!token || typeof token !== "string") {
-      return res.status(400).send("Missing token");
-    }
+  const { token } = req.query;
+  if (!token || typeof token !== "string") {
+    return res.status(400).send("Missing token");
+  }
 
-    try {
-      // Over Clerk session token
-      const session = await clerk.sessions.getSession(token);
-      if (!session || !session.userId) {
-        return res.status(401).send("Invalid token");
-      }
+  try {
+    // Over JWT token od iOS app
+    const { sessionId, userId } = await clerk.sessions.verifySession(token);
 
-      const userId = session.userId;
-
-      // zapíš usera do DB, ak ho ešte nemáš
-      await prisma.user.upsert({
-        where: { id: userId },
-        update: {},
-        create: { id: userId },
-      });
-
-      // redirectni na frontend callback
-      return res.redirect(`${process.env.APP_URL}/sso/callback?sessionId=${session.id}`);
-    } catch (err) {
-      console.error("SSO error:", err);
+    if (!userId) {
       return res.status(401).send("Invalid token");
     }
-  });
+
+    // zapíš do DB
+    await ensureUser(userId);
+
+    // redirect na FE
+    return res.redirect(`${process.env.APP_URL}/sso/callback?sessionId=${sessionId}`);
+  } catch (err) {
+    console.error("SSO error:", err);
+    return res.status(401).send("Invalid token");
+  }
+});
+
     router.post("/payments/checkout/treasury", async (req, res) => {
         try {
             const { userId, quantity, year } = (req.body || {});
