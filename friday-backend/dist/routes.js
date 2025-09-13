@@ -169,32 +169,34 @@ function fridayRoutes(prisma) {
         }
     });
     router.get("/sso", async (req, res) => {
-    const { token } = req.query;
-    if (!token || typeof token !== "string") {
-      return res.status(400).send("Missing token");
-    }
+  const { token } = req.query;
+  if (!token || typeof token !== "string") {
+    return res.status(400).send("Missing token");
+  }
 
-    try {
-      if (!JWKS || !ISSUER) {
-        throw new Error("Clerk JWKS not configured");
-      }
+  try {
+    // over JWT voči Clerk public keys
+    const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUER });
+    const userId = payload.sub;
+    const sessionId = payload.sid; // Clerk sessionId z JWT payloadu
 
-      const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUER });
-      const userId = payload.sub;
-
-      if (!userId) {
-        return res.status(401).send("Invalid token");
-      }
-
-      await ensureUser(userId);
-
-      // presmeruj na FE callback s sessionId
-      return res.redirect(`${process.env.APP_URL}/sso/callback?sessionId=${payload.sid}`);
-    } catch (err) {
-      console.error("SSO error:", err);
+    if (!userId || !sessionId) {
       return res.status(401).send("Invalid token");
     }
-  });
+
+    // sync usera do DB
+    await ensureUser(userId);
+
+    // presmeruj na frontend burzy → Next.js
+    return res.redirect(
+      `${process.env.APP_URL}/sso/callback?sessionId=${sessionId}`
+    );
+  } catch (err) {
+    console.error("SSO error:", err);
+    return res.status(401).send("Invalid token");
+  }
+});
+
 
     router.post("/payments/checkout/treasury", async (req, res) => {
         try {
