@@ -10,14 +10,10 @@ const express_1 = __importDefault(require("express"));
 const client_1 = require("@prisma/client");
 const config_1 = require("./config");
 const { jwtVerify, createRemoteJWKSet } = require("jose");
-const { createClerkClient } = require("@clerk/backend");
+const { verifyToken } = require("@clerk/backend");   // ✅ namiesto createClerkClient
 const stripe_1 = __importDefault(require("stripe"));
 
 const stripe = new stripe_1.default(process.env.STRIPE_SECRET_KEY);
-
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY,
-});
 
 // 🔑 JWKS setup – len raz
 const ISSUER = process.env.CLERK_ISSUER;
@@ -41,6 +37,7 @@ async function getUserIdFromAuthHeader(req) {
     return null;
   }
 }
+
 
 function fridayRoutes(prisma) {
     const router = express_1.default.Router();
@@ -175,25 +172,32 @@ function fridayRoutes(prisma) {
   }
 
   try {
-    // Over Clerk token a získaj session
-    const session = await clerk.sessions.verifySessionToken(token);
+    // over token voči Clerk
+    const session = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+      issuer: process.env.CLERK_ISSUER,
+    });
 
-    if (!session || !session.id || !session.userId) {
+    const userId = session.sub;
+    const sessionId = session.sid;
+
+    if (!userId || !sessionId) {
       return res.status(401).send("Invalid token");
     }
 
     // sync usera do DB
-    await ensureUser(session.userId);
+    await ensureUser(userId);
 
     // presmeruj na frontend s reálnym Clerk sessionId
     return res.redirect(
-      `${process.env.APP_URL}/sso/callback?sessionId=${session.id}`
+      `${process.env.APP_URL}/sso/callback?sessionId=${sessionId}`
     );
   } catch (err) {
     console.error("SSO error:", err);
     return res.status(401).send("Invalid token");
   }
 });
+
 
 
 
