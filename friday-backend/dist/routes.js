@@ -1,38 +1,47 @@
 "use strict";
 var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
+  return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.default = fridayRoutes;
-// src/friday/routes.ts
+
+// imports
 const express_1 = __importDefault(require("express"));
 const client_1 = require("@prisma/client");
 const config_1 = require("./config");
-const jose_1 = require("jose");
-const backend_1 = require("@clerk/backend");
+const { jwtVerify, createRemoteJWKSet } = require("jose");
+const { createClerkClient } = require("@clerk/backend");
 const stripe_1 = __importDefault(require("stripe"));
+
 const stripe = new stripe_1.default(process.env.STRIPE_SECRET_KEY);
-const clerk = (0, backend_1.createClerkClient)({
-    secretKey: process.env.CLERK_SECRET_KEY,
+
+const clerk = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY,
 });
+
+// 🔑 JWKS setup – len raz
 const ISSUER = process.env.CLERK_ISSUER;
-const JWKS = ISSUER ? (0, jose_1.createRemoteJWKSet)(new URL(`${ISSUER}/.well-known/jwks.json`)) : null;
+const JWKS = ISSUER
+  ? createRemoteJWKSet(new URL(`${ISSUER}/.well-known/jwks.json`))
+  : null;
+
+// helper na získanie userId z Authorization: Bearer ...
 async function getUserIdFromAuthHeader(req) {
-    try {
-        const auth = req.header("authorization") || req.header("Authorization");
-        if (!auth?.startsWith("Bearer "))
-            return null;
-        const token = auth.slice("Bearer ".length);
-        if (!JWKS || !ISSUER)
-            return null;
-        const { payload } = await (0, jose_1.jwtVerify)(token, JWKS, { issuer: ISSUER });
-        return payload.sub || null;
-    }
-    catch (e) {
-        console.error("JWT verify error:", e);
-        return null;
-    }
+  try {
+    const auth = req.header("authorization") || req.header("Authorization");
+    if (!auth?.startsWith("Bearer ")) return null;
+
+    const token = auth.slice("Bearer ".length);
+    if (!JWKS || !ISSUER) return null;
+
+    const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUER });
+    return payload.sub || null;
+  } catch (e) {
+    console.error("JWT verify error:", e);
+    return null;
+  }
 }
+
 function fridayRoutes(prisma) {
     const router = express_1.default.Router();
     async function ensureSettings() {
@@ -160,29 +169,32 @@ function fridayRoutes(prisma) {
         }
     });
     router.get("/sso", async (req, res) => {
-  const { token } = req.query;
-  if (!token || typeof token !== "string") {
-    return res.status(400).send("Missing token");
-  }
-
-  try {
-    // Over JWT token od iOS app
-    const { sessionId, userId } = await clerk.sessions.verifySession(token);
-
-    if (!userId) {
-      return res.status(401).send("Invalid token");
+    const { token } = req.query;
+    if (!token || typeof token !== "string") {
+      return res.status(400).send("Missing token");
     }
 
-    // zapíš do DB
-    await ensureUser(userId);
+    try {
+      if (!JWKS || !ISSUER) {
+        throw new Error("Clerk JWKS not configured");
+      }
 
-    // redirect na FE
-    return res.redirect(`${process.env.APP_URL}/sso/callback?sessionId=${sessionId}`);
-  } catch (err) {
-    console.error("SSO error:", err);
-    return res.status(401).send("Invalid token");
-  }
-});
+      const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUER });
+      const userId = payload.sub;
+
+      if (!userId) {
+        return res.status(401).send("Invalid token");
+      }
+
+      await ensureUser(userId);
+
+      // presmeruj na FE callback s sessionId
+      return res.redirect(`${process.env.APP_URL}/sso/callback?sessionId=${payload.sid}`);
+    } catch (err) {
+      console.error("SSO error:", err);
+      return res.status(401).send("Invalid token");
+    }
+  });
 
     router.post("/payments/checkout/treasury", async (req, res) => {
         try {
