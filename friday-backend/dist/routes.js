@@ -165,32 +165,30 @@ function fridayRoutes(prisma) {
             return res.status(500).json({ success: false, message: "Server error" });
         }
     });
-    router.get("/sso", async (req, res) => {
+
+// /friday/sso?token=XYZ
+router.get("/sso", async (req, res) => {
   const { token } = req.query;
-  console.log("👉 Dostaný token z frontendu:", token); // pridaj toto
+
   if (!token || typeof token !== "string") {
-    return res.status(400).send("Missing token");
+    return res.status(400).send("❌ Missing token");
   }
 
   try {
-    const { payload } = await verifyToken(token, {
-      secretKey: process.env.CLERK_SECRET_KEY,
-    });
+    // 👇 presmeruj rovno na tvoju Next.js appku
+    const callbackUrl = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(
+      token
+    )}`;
 
-    const userId = payload.sub;
-    if (!userId) {
-      return res.status(401).send("Invalid token");
-    }
-
-    await ensureUser(userId);
-
-    // Pošli token rovno na frontend
-    return res.redirect(`${process.env.APP_URL}/sso/callback?token=${token}`);
+    return res.redirect(callbackUrl);
   } catch (err) {
     console.error("SSO error:", err);
-    return res.status(401).send("Invalid token");
+    return res.status(500).send("❌ Internal server error");
   }
 });
+
+export default router;
+
 
 
 
