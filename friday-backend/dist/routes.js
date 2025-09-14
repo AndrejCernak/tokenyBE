@@ -57,6 +57,24 @@ function fridayRoutes(prisma) {
     });
   }
 
+  async function getUserIdFromBearer(req) {
+  try {
+    const auth = req.header("authorization") || req.header("Authorization");
+    if (!auth || !auth.startsWith("Bearer ")) return null;
+    const token = auth.slice("Bearer ".length);
+
+    const { payload } = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+    });
+
+    return payload.sub || null;
+  } catch (e) {
+    console.error("Clerk verifyToken error:", e);
+    return null;
+  }
+}
+
+
   // ========== ADMIN ==========
   router.post("/admin/mint", async (req, res) => {
     try {
@@ -93,18 +111,32 @@ function fridayRoutes(prisma) {
   });
 
   router.post("/sync-user", async (req, res) => {
-    const userId = await getUserIdFromAuthHeader(req);
-    if (!userId) return res.status(401).json({ error: "Unauthenticated" });
+  const userId = await getUserIdFromBearer(req);
+  if (!userId) return res.status(401).json({ error: "Unauthenticated" });
 
+  try {
+    await ensureUser(userId);
+
+    // (voliteľné) nastav rolu v Clerk, ak chýba
     try {
-      await ensureUser(userId);
-      // sem môžeš dať sync role s Clerk ak potrebuješ
-      return res.json({ ok: true });
+      const u = await clerk.users.getUser(userId);
+      if (!u.publicMetadata?.role) {
+        await clerk.users.updateUser(userId, {
+          publicMetadata: { ...(u.publicMetadata || {}), role: "client" },
+        });
+        console.log(`🔑 Clerk: nastavil som rolu "client" pre user ${userId}`);
+      }
     } catch (e) {
-      console.error("sync-user error:", e);
-      return res.status(500).json({ error: "Server error" });
+      console.error("clerk update role failed:", e);
     }
-  });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("sync-user error:", e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 
   // ========== PUBLIC ==========
   router.get("/supply", async (req, res) => {
