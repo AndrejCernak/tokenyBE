@@ -3,10 +3,12 @@ const express = require("express");
 const { Prisma } = require("@prisma/client");
 const { MAX_PRIMARY_TOKENS_PER_USER } = require("./config");
 const { jwtVerify, createRemoteJWKSet } = require("jose");
-const { verifyToken } = require("@clerk/backend");
+const { verifyToken, createClerkClient } = require("@clerk/backend");
 const Stripe = require("stripe");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY }); // ✅ toto si pridal
+
 
 // 🔑 JWKS setup – len raz
 const ISSUER = process.env.CLERK_ISSUER;
@@ -125,22 +127,38 @@ function fridayRoutes(prisma) {
     }
   });
 
-  // /friday/sso?token=XYZ
   router.get("/sso", async (req, res) => {
-    const { token } = req.query;
-    if (!token || typeof token !== "string") {
-      return res.status(400).send("❌ Missing token");
-    }
-    try {
-      const callbackUrl = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(
-        token
-      )}`;
-      return res.redirect(callbackUrl);
-    } catch (err) {
-      console.error("SSO error:", err);
-      return res.status(500).send("❌ Internal server error");
-    }
-  });
+  const { token } = req.query;
+  if (!token || typeof token !== "string") {
+    return res.status(400).send("❌ Missing token");
+  }
+
+  try {
+    // 1) overíme iOS session JWT
+    const { payload } = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+      // voliteľne: authorizedParties: [process.env.APP_URL],
+    });
+
+    const userId = payload.sub;
+    if (!userId) return res.status(401).send("❌ Invalid token");
+
+    // 2) vytvoríme single-use sign-in token (ticket)
+    const { token: signInToken } = await clerk.signInTokens.createSignInToken({
+      userId,
+      expiresInSeconds: 60, // stačí 1 minúta
+    });
+
+    // 3) presmeruj na FE callback so sign-in tokenom
+    const url = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(
+      signInToken
+    )}`;
+    return res.redirect(url);
+  } catch (err) {
+    console.error("SSO error:", err);
+    return res.status(401).send("❌ Invalid or expired token");
+  }
+});
 
     router.post("/payments/checkout/treasury", async (req, res) => {
         try {
