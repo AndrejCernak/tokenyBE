@@ -127,7 +127,7 @@ function fridayRoutes(prisma) {
     }
   });
 
-  rrouter.get("/sso", async (req, res) => {
+  router.get("/sso", async (req, res) => {
   const { token } = req.query;
   if (!token || typeof token !== "string") {
     return res.status(400).send("❌ Missing token");
