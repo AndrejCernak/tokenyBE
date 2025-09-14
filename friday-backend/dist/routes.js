@@ -167,6 +167,7 @@ function fridayRoutes(prisma) {
     });
     router.get("/sso", async (req, res) => {
   const { token } = req.query;
+  console.log("👉 Dostaný token z frontendu:", token); // pridaj toto
   if (!token || typeof token !== "string") {
     return res.status(400).send("Missing token");
   }
