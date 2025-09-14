@@ -115,6 +115,35 @@ async function getUserIdFromBearer(req) {
     }
   });
 
+  // Nastavenie ceny
+    router.post("/admin/set-price", async (req, res) => {
+        try {
+            const { newPrice, repriceTreasury } = req.body;
+            const price = Number(newPrice);
+            if (!Number.isFinite(price) || price <= 0) {
+                return res.status(400).json({ success: false, message: "Invalid newPrice" });
+            }
+            await prisma.$transaction(async (tx) => {
+                await tx.fridaySettings.upsert({
+                    where: { id: 1 },
+                    update: { currentPriceEur: price },
+                    create: { id: 1, currentPriceEur: price },
+                });
+                if (repriceTreasury) {
+                    await tx.fridayToken.updateMany({
+                        where: { ownerId: null, status: "active" },
+                        data: { originalPriceEur: price },
+                    });
+                }
+            });
+            return res.json({ success: true, priceEur: price });
+        }
+        catch (e) {
+            console.error("POST /friday/admin/set-price", e);
+            return res.status(500).json({ success: false, message: "Server error" });
+        }
+    });
+  
   router.post("/sync-user", async (req, res) => {
   const userId = await getUserIdFromBearer(req);
   if (!userId) return res.status(401).json({ error: "Unauthenticated" });
