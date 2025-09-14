@@ -134,21 +134,24 @@ function fridayRoutes(prisma) {
   }
 
   try {
-    // 1) overíme session JWT z iOS
-    const session = await clerk.sessions.verifySession(token);
-    const userId = session.userId;
-    if (!userId) return res.status(401).send("❌ Invalid token");
+    // 1) Overíme iOS session JWT lokálne
+    const { payload } = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+    });
 
-    // 2) vytvoríme jednorazový sign-in ticket
+    const userId = payload.sub;
+    if (!userId) {
+      return res.status(401).send("❌ Invalid token");
+    }
+
+    // 2) Vytvoríme jednorazový sign-in ticket
     const { token: signInToken } = await clerk.signInTokens.createSignInToken({
       userId,
       expiresInSeconds: 60,
     });
 
-    // 3) presmerujeme na FE callback
-    const url = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(
-      signInToken
-    )}`;
+    // 3) Presmerujeme na frontend callback
+    const url = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(signInToken)}`;
     return res.redirect(url);
   } catch (err) {
     console.error("SSO error:", err);
