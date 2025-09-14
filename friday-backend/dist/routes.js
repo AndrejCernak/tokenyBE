@@ -1,19 +1,12 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-  return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.default = fridayRoutes;
-
-// imports
-const express_1 = __importDefault(require("express"));
-const client_1 = require("@prisma/client");
-const config_1 = require("./config");
+const express = require("express");
+const { Prisma } = require("@prisma/client");
+const { MAX_PRIMARY_TOKENS_PER_USER } = require("./config");
 const { jwtVerify, createRemoteJWKSet } = require("jose");
-const { verifyToken } = require("@clerk/backend");   // ✅ namiesto createClerkClient
-const stripe_1 = __importDefault(require("stripe"));
+const { verifyToken } = require("@clerk/backend");
+const Stripe = require("stripe");
 
-const stripe = new stripe_1.default(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // 🔑 JWKS setup – len raz
 const ISSUER = process.env.CLERK_ISSUER;
@@ -38,161 +31,116 @@ async function getUserIdFromAuthHeader(req) {
   }
 }
 
+// 📌 Exportujeme funkciu fridayRoutes
+module.exports = fridayRoutes;
 
 function fridayRoutes(prisma) {
-    const router = express_1.default.Router();
-    async function ensureSettings() {
-        const existing = await prisma.fridaySettings.findUnique({ where: { id: 1 } });
-        if (!existing) {
-            await prisma.fridaySettings.create({ data: { id: 1, currentPriceEur: new client_1.Prisma.Decimal(0) } });
-        }
-        return prisma.fridaySettings.findUnique({ where: { id: 1 } });
+  const router = express.Router();
+
+  async function ensureSettings() {
+    const existing = await prisma.fridaySettings.findUnique({ where: { id: 1 } });
+    if (!existing) {
+      await prisma.fridaySettings.create({
+        data: { id: 1, currentPriceEur: new Prisma.Decimal(0) },
+      });
     }
-    async function ensureUser(userId) {
-        await prisma.user.upsert({
-            where: { id: userId },
-            update: {},
-            create: { id: userId },
+    return prisma.fridaySettings.findUnique({ where: { id: 1 } });
+  }
+
+  async function ensureUser(userId) {
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: {},
+      create: { id: userId },
+    });
+  }
+
+  // ========== ADMIN ==========
+  router.post("/admin/mint", async (req, res) => {
+    try {
+      const { quantity, priceEur, year } = req.body;
+      const qty = Number(quantity);
+      const price = Number(priceEur);
+      const y = Number(year) || new Date().getFullYear();
+
+      if (!Number.isInteger(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid quantity/priceEur" });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.fridayToken.createMany({
+          data: Array.from({ length: qty }, () => ({
+            minutesRemaining: 60,
+            status: "active",
+            originalPriceEur: new Prisma.Decimal(price),
+            issuedYear: y,
+          })),
         });
+        await tx.fridaySettings.upsert({
+          where: { id: 1 },
+          update: { currentPriceEur: new Prisma.Decimal(price) },
+          create: { id: 1, currentPriceEur: new Prisma.Decimal(price) },
+        });
+      });
+
+      return res.json({ success: true, minted: qty, priceEur: price, year: y });
+    } catch (e) {
+      console.error("POST /admin/mint", e);
+      return res.status(500).json({ success: false, message: "Server error" });
     }
-    // ========== ADMIN ==========
-    // Mint tokenov (bez auth – pridaj si middleware podľa potreby)
-    router.post("/admin/mint", async (req, res) => {
-        try {
-            const { quantity, priceEur, year } = req.body;
-            const qty = Number(quantity);
-            const price = Number(priceEur);
-            const y = Number(year) || new Date().getFullYear();
-            if (!Number.isInteger(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0) {
-                return res.status(400).json({ success: false, message: "Invalid quantity/priceEur" });
-            }
-            await prisma.$transaction(async (tx) => {
-                await tx.fridayToken.createMany({
-                    data: Array.from({ length: qty }, () => ({
-                        minutesRemaining: 60,
-                        status: "active",
-                        originalPriceEur: new client_1.Prisma.Decimal(price),
-                        issuedYear: y,
-                    })),
-                });
-                await tx.fridaySettings.upsert({
-                    where: { id: 1 },
-                    update: { currentPriceEur: new client_1.Prisma.Decimal(price) },
-                    create: { id: 1, currentPriceEur: new client_1.Prisma.Decimal(price) },
-                });
-            });
-            return res.json({ success: true, minted: qty, priceEur: price, year: y });
-        }
-        catch (e) {
-            console.error("POST /admin/mint", e);
-            return res.status(500).json({ success: false, message: "Server error" });
-        }
-    });
-    router.post("/sync-user", async (req, res) => {
-        const userId = await getUserIdFromAuthHeader(req);
-        if (!userId)
-            return res.status(401).json({ error: "Unauthenticated" });
-        try {
-            // sync user to DB
-            await ensureUser(userId);
-            // sync role to Clerk
-            try {
-                const u = await clerk.users.getUser(userId);
-                if (!u.publicMetadata?.role) {
-                    await clerk.users.updateUser(userId, {
-                        publicMetadata: { ...(u.publicMetadata || {}), role: "client" },
-                    });
-                    console.log(`🔑 Clerk: nastavil som rolu "client" pre user ${userId}`);
-                }
-            }
-            catch (e) {
-                console.error("clerk update role failed:", e);
-            }
-            return res.json({ ok: true });
-        }
-        catch (e) {
-            console.error("sync-user error:", e);
-            return res.status(500).json({ error: "Server error" });
-        }
-    });
-    // Nastavenie ceny v pokladnici
-    router.post("/admin/set-price", async (req, res) => {
-        try {
-            const { newPrice, repriceTreasury } = req.body;
-            const price = Number(newPrice);
-            if (!Number.isFinite(price) || price <= 0) {
-                return res.status(400).json({ success: false, message: "Invalid newPrice" });
-            }
-            await prisma.$transaction(async (tx) => {
-                await tx.fridaySettings.upsert({
-                    where: { id: 1 },
-                    update: { currentPriceEur: new client_1.Prisma.Decimal(price) },
-                    create: { id: 1, currentPriceEur: new client_1.Prisma.Decimal(price) },
-                });
-                if (repriceTreasury) {
-                    await tx.fridayToken.updateMany({
-                        where: { ownerId: null, status: "active" },
-                        data: { originalPriceEur: new client_1.Prisma.Decimal(price) },
-                    });
-                }
-            });
-            return res.json({ success: true, priceEur: price });
-        }
-        catch (e) {
-            console.error("POST /admin/set-price", e);
-            return res.status(500).json({ success: false, message: "Server error" });
-        }
-    });
-    // ========== PUBLIC ==========
-    // Supply (stav pokladnice pre rok)
-    router.get("/supply", async (req, res) => {
-        try {
-            const y = Number(req.query.year || new Date().getFullYear());
-            const settings = await ensureSettings();
-            const treasuryCount = await prisma.fridayToken.count({
-                where: { ownerId: null, status: "active", issuedYear: y },
-            });
-            return res.json({
-                year: y,
-                priceEur: Number(settings?.currentPriceEur || 0),
-                treasuryAvailable: treasuryCount,
-                totalMinted: 0,
-                totalSold: 0,
-            });
-        }
-        catch (e) {
-            console.error("GET /supply", e);
-            return res.status(500).json({ success: false, message: "Server error" });
-        }
-    });
+  });
 
-// /friday/sso?token=XYZ
-router.get("/sso", async (req, res) => {
-  const { token } = req.query;
+  router.post("/sync-user", async (req, res) => {
+    const userId = await getUserIdFromAuthHeader(req);
+    if (!userId) return res.status(401).json({ error: "Unauthenticated" });
 
-  if (!token || typeof token !== "string") {
-    return res.status(400).send("❌ Missing token");
-  }
+    try {
+      await ensureUser(userId);
+      // sem môžeš dať sync role s Clerk ak potrebuješ
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error("sync-user error:", e);
+      return res.status(500).json({ error: "Server error" });
+    }
+  });
 
-  try {
-    // 👇 presmeruj rovno na tvoju Next.js appku
-    const callbackUrl = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(
-      token
-    )}`;
+  // ========== PUBLIC ==========
+  router.get("/supply", async (req, res) => {
+    try {
+      const y = Number(req.query.year || new Date().getFullYear());
+      const settings = await ensureSettings();
+      const treasuryCount = await prisma.fridayToken.count({
+        where: { ownerId: null, status: "active", issuedYear: y },
+      });
+      return res.json({
+        year: y,
+        priceEur: Number(settings?.currentPriceEur || 0),
+        treasuryAvailable: treasuryCount,
+        totalMinted: 0,
+        totalSold: 0,
+      });
+    } catch (e) {
+      console.error("GET /supply", e);
+      return res.status(500).json({ success: false, message: "Server error" });
+    }
+  });
 
-    return res.redirect(callbackUrl);
-  } catch (err) {
-    console.error("SSO error:", err);
-    return res.status(500).send("❌ Internal server error");
-  }
-});
-
-export default router;
-
-
-
-
-
+  // /friday/sso?token=XYZ
+  router.get("/sso", async (req, res) => {
+    const { token } = req.query;
+    if (!token || typeof token !== "string") {
+      return res.status(400).send("❌ Missing token");
+    }
+    try {
+      const callbackUrl = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(
+        token
+      )}`;
+      return res.redirect(callbackUrl);
+    } catch (err) {
+      console.error("SSO error:", err);
+      return res.status(500).send("❌ Internal server error");
+    }
+  });
 
     router.post("/payments/checkout/treasury", async (req, res) => {
         try {
