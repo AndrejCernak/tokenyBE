@@ -57,22 +57,27 @@ function fridayRoutes(prisma) {
     });
   }
 
-  async function getUserIdFromBearer(req) {
-  try {
-    const auth = req.header("authorization") || req.header("Authorization");
-    if (!auth || !auth.startsWith("Bearer ")) return null;
-    const token = auth.slice("Bearer ".length);
+  // NÁHRADA za pôvodnú verziu s { payload }
+async function getUserIdFromBearer(req) {
+  const auth = req.header("authorization") || req.header("Authorization");
+  if (!auth || !auth.startsWith("Bearer ")) return null;
 
-    const { payload } = await verifyToken(token, {
+  const token = auth.slice("Bearer ".length);
+
+  try {
+    // verifyToken vracia priamo claims (nie { payload })
+    const claims = await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY,
+      // nič ďalšie sem nedávaj, nech to je čo najtolerantnejšie
     });
 
-    return payload.sub || null;
+    return claims.sub || null;
   } catch (e) {
     console.error("Clerk verifyToken error:", e);
     return null;
   }
 }
+
 
 
   // ========== ADMIN ==========
@@ -166,23 +171,15 @@ function fridayRoutes(prisma) {
   }
 
   try {
-    // 1) Overíme iOS session JWT lokálne
-    const { payload } = await verifyToken(token, {
-      secretKey: process.env.CLERK_SECRET_KEY,
-    });
+    const claims = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+    const userId = claims.sub;
+    if (!userId) return res.status(401).send("❌ Invalid token");
 
-    const userId = payload.sub;
-    if (!userId) {
-      return res.status(401).send("❌ Invalid token");
-    }
-
-    // 2) Vytvoríme jednorazový sign-in ticket
     const { token: signInToken } = await clerk.signInTokens.createSignInToken({
       userId,
       expiresInSeconds: 60,
     });
 
-    // 3) Presmerujeme na frontend callback
     const url = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(signInToken)}`;
     return res.redirect(url);
   } catch (err) {
@@ -190,6 +187,7 @@ function fridayRoutes(prisma) {
     return res.status(401).send("❌ Invalid or expired token");
   }
 });
+
 
 
 
