@@ -127,32 +127,35 @@ function fridayRoutes(prisma) {
     }
   });
 
-  router.get("/sso", async (req, res) => {
+  rrouter.get("/sso", async (req, res) => {
   const { token } = req.query;
   if (!token || typeof token !== "string") {
     return res.status(400).send("❌ Missing token");
   }
 
   try {
-    // Overíme iOS session token
-    const session = await clerk.sessions.verifySessionToken(token);
+    // 1) overíme session JWT z iOS
+    const session = await clerk.sessions.verifySession(token);
     const userId = session.userId;
     if (!userId) return res.status(401).send("❌ Invalid token");
 
-    // Vytvoríme jednorazový sign-in ticket
+    // 2) vytvoríme jednorazový sign-in ticket
     const { token: signInToken } = await clerk.signInTokens.createSignInToken({
       userId,
       expiresInSeconds: 60,
     });
 
-    // Presmerujeme na callback vo FE
-    const url = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(signInToken)}`;
+    // 3) presmerujeme na FE callback
+    const url = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(
+      signInToken
+    )}`;
     return res.redirect(url);
   } catch (err) {
     console.error("SSO error:", err);
     return res.status(401).send("❌ Invalid or expired token");
   }
 });
+
 
 
     router.post("/payments/checkout/treasury", async (req, res) => {
