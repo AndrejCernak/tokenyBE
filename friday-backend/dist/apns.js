@@ -3,26 +3,27 @@ const apn = require("apn");
 
 const apnProvider = new apn.Provider({
   token: {
-    key: Buffer.from(process.env.APNS_AUTH_KEY, "utf-8"), // alebo použi fs.readFileSync
-    keyId: process.env.APNS_KEY_ID,
-    teamId: process.env.APNS_TEAM_ID,
+    key: process.env.APN_KEY_CONTENT.replace(/\\n/g, '\n'),
+    keyId: process.env.APN_KEY_ID,
+    teamId: process.env.APN_TEAM_ID,
   },
-  production: false, // ⚠️ true až keď budeš na TestFlight/App Store
+  production: false, // ak testuješ na vývojovom builde
 });
 
-async function sendVoipPush(deviceToken, callerId) {
-  const notification = new apn.Notification();
+async function sendVoipPush(deviceToken, payload = {}) {
+  const note = new apn.Notification();
 
-  notification.topic = process.env.APNS_BUNDLE_ID + ".voip"; // VoIP má vždy .voip suffix
-  notification.pushType = "voip";
-  notification.expiry = Math.floor(Date.now() / 1000) + 60; // platnosť 1 minúta
-  notification.payload = { callerId }; // pošleme ID volajúceho
+  note.rawPayload = payload; // tu posielaš vlastné JSON
+  note.topic = process.env.APN_BUNDLE_ID + ".voip"; // ⚠️ musí byť s .voip suffixom
+  note.pushType = "voip";
 
   try {
-    const result = await apnProvider.send(notification, deviceToken);
-    console.log("📩 APNs push result:", JSON.stringify(result, null, 2));
+    const result = await apnProvider.send(note, deviceToken);
+    console.log("📩 APNs result:", result);
+    return result;
   } catch (err) {
-    console.error("❌ APNs push error:", err);
+    console.error("❌ APNs send error:", err);
+    throw err;
   }
 }
 
