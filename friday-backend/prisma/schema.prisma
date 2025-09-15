@@ -169,3 +169,11 @@ model CallLog {
   duration  Int?      // v sekundách
   usedToken String?   // ID tokenu, ak bol použitý v piatok
 }
+
+model Device {
+  id          String   @id @default(cuid())
+  userId      String
+  deviceToken String   @unique
+  createdAt   DateTime @default(now())
+}
+
