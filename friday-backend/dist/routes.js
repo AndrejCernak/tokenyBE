@@ -88,14 +88,14 @@ async function getUserIdFromBearer(req) {
   }
 
   try {
-    let updateData = {};
+    const updateData = {};
     if (voipToken) updateData.voipToken = voipToken;
     if (apnsToken) updateData.apnsToken = apnsToken;
 
     await prisma.device.upsert({
-      where: { userId },   // ⚡ teraz hľadáme podľa userId
-      update: updateData,
-      create: { userId, ...updateData },
+      where: { userId },               // userId je teraz @unique
+      update: updateData,              // ak existuje, update tokenov
+      create: { userId, ...updateData } // inak vytvor nový záznam
     });
 
     return res.json({ success: true });
