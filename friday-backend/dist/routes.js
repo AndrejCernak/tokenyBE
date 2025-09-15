@@ -199,28 +199,31 @@ router.post("/call-user", async (req, res) => {
   }
 
   try {
-    // nájdi device token toho, komu voláme
-    const device = await prisma.device.findFirst({
-      where: { userId: calleeId },
-    });
-
+    const device = await prisma.device.findFirst({ where: { userId: calleeId } });
     if (!device) {
       return res.status(404).json({ success: false, message: "Callee has no device token" });
     }
 
-    // payload – môžeš pridať aj viac info (meno volajúceho, callId atď.)
-    const payload = {
-      callerId,
-      type: "incoming_call",
-    };
+    const payload = { callerId, type: "incoming_call" };
 
-    const result = await sendVoipPush(device.deviceToken, payload);
-    return res.json({ success: true, result });
+    // najprv skúsiť VoIP push
+    const voipResult = await sendVoipPush(device.deviceToken, payload);
+
+    // vždy poslať aj alert push (alebo iba ak voip failne)
+    await sendAlertPush(
+      device.deviceToken,
+      "Prichádzajúci hovor 📞",
+      `Volá ti používateľ ${callerId}`,
+      payload
+    );
+
+    return res.json({ success: true, voipResult });
   } catch (err) {
     console.error("call-user error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 
 
   // ========== PUBLIC ==========
