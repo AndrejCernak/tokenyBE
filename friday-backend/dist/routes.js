@@ -5,7 +5,7 @@ const { MAX_PRIMARY_TOKENS_PER_USER } = require("./config");
 const { jwtVerify, createRemoteJWKSet } = require("jose");
 const { verifyToken, createClerkClient } = require("@clerk/backend");
 const Stripe = require("stripe");
-const { sendVoipPush } = require("./apns");
+const { sendVoipPush, sendAlertPush } = require("./apns");
 
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -206,20 +206,24 @@ router.post("/call-user", async (req, res) => {
 
     const payload = { callerId, type: "incoming_call" };
 
-    // najprv skúsiť VoIP push
+    // skúsiť VoIP
     const voipResult = await sendVoipPush(device.deviceToken, payload);
+    console.log("📡 VoIP result:", JSON.stringify(voipResult, null, 2));
 
-    // vždy poslať aj alert push (alebo iba ak voip failne)
-    await sendAlertPush(
-      device.deviceToken,
-      "Prichádzajúci hovor 📞",
-      `Volá ti používateľ ${callerId}`,
-      payload
-    );
+    if (voipResult.failed?.length) {
+      console.log("⚠️ VoIP push failed → fallback to alert");
+      const alertResult = await sendAlertPush(
+        device.deviceToken,
+        "Prichádzajúci hovor 📞",
+        `Volá ti používateľ ${callerId}`,
+        payload
+      );
+      console.log("📩 Alert result:", JSON.stringify(alertResult, null, 2));
+    }
 
-    return res.json({ success: true, voipResult });
+    return res.json({ success: true });
   } catch (err) {
-    console.error("call-user error:", err);
+    console.error("❌ call-user error:", err);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
