@@ -1,13 +1,15 @@
 // apns.js
 const apn = require("apn");
 
-const apnProvider = new apn.Provider({
+const keyContent = process.env.APN_KEY_CONTENT.replace(/\\n/g, "\n");
+
+const provider = new apn.Provider({
   token: {
-    key: process.env.APN_KEY_CONTENT.replace(/\\n/g, '\n'),
+    key: keyContent,
     keyId: process.env.APN_KEY_ID,
     teamId: process.env.APN_TEAM_ID,
   },
-  production: false, // ak testuješ na vývojovom builde
+  production: false,
 });
 
 async function sendVoipPush(deviceToken, payload = {}) {
