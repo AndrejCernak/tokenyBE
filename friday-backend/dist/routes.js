@@ -81,23 +81,24 @@ async function getUserIdFromBearer(req) {
 }
 
   router.post("/register-device", async (req, res) => {
-  const { userId, deviceToken } = req.body;
-  if (!userId || !deviceToken) {
-    return res.status(400).json({ success: false, message: "Missing userId or deviceToken" });
+  const { userId, voipToken, apnsToken } = req.body;
+  if (!userId) {
+    return res.status(400).json({ success: false, message: "Missing userId" });
   }
 
   try {
     await prisma.device.upsert({
-      where: { deviceToken },
-      update: { userId },
-      create: { userId, deviceToken },
+      where: { userId },
+      update: { voipToken, apnsToken },
+      create: { userId, voipToken, apnsToken },
     });
-    return res.json({ success: true });
+    res.json({ success: true });
   } catch (e) {
     console.error("register-device error:", e);
-    return res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false });
   }
 });
+
 
   // ========== ADMIN ==========
   router.post("/admin/mint", async (req, res) => {
@@ -193,40 +194,36 @@ async function getUserIdFromBearer(req) {
   // VoIP push – zavolanie užívateľa
 router.post("/call-user", async (req, res) => {
   const { callerId, calleeId } = req.body;
-
-  if (!callerId || !calleeId) {
-    return res.status(400).json({ success: false, message: "Missing callerId or calleeId" });
-  }
+  if (!callerId || !calleeId) return res.status(400).json({ success: false });
 
   try {
-    const device = await prisma.device.findFirst({ where: { userId: calleeId } });
-    if (!device) {
-      return res.status(404).json({ success: false, message: "Callee has no device token" });
-    }
+    const device = await prisma.device.findUnique({ where: { userId: calleeId } });
+    if (!device) return res.status(404).json({ success: false });
 
     const payload = { callerId, type: "incoming_call" };
+    let sent = false;
 
-    // skúsiť VoIP
-    const voipResult = await sendVoipPush(device.deviceToken, payload);
-    console.log("📡 VoIP result:", JSON.stringify(voipResult, null, 2));
+    if (device.voipToken) {
+      const r = await sendVoipPush(device.voipToken, payload);
+      sent = !(r.failed && r.failed.length);
+    }
 
-    if (voipResult.failed?.length) {
-      console.log("⚠️ VoIP push failed → fallback to alert");
-      const alertResult = await sendAlertPush(
-        device.deviceToken,
+    if (!sent && device.apnsToken) {
+      await sendAlertPush(
+        device.apnsToken,
         "Prichádzajúci hovor 📞",
         `Volá ti používateľ ${callerId}`,
         payload
       );
-      console.log("📩 Alert result:", JSON.stringify(alertResult, null, 2));
     }
 
-    return res.json({ success: true });
+    res.json({ success: true });
   } catch (err) {
-    console.error("❌ call-user error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("call-user error:", err);
+    res.status(500).json({ success: false });
   }
 });
+
 
 
 
