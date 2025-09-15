@@ -22,7 +22,8 @@
   "stripe": "^18.5.0",
   "websocket": "^1.0.35",
   "ws": "^8.18.3",
-  "@parse/node-apn": "^6.0.0"
+  "@parse/node-apn": "^6.0.0",
+  "apn": "^2.2.0"
 }
 ,
   "devDependencies": {
