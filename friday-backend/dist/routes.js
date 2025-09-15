@@ -201,35 +201,41 @@ async function getUserIdFromBearer(req) {
   // VoIP push – zavolanie užívateľa
 router.post("/call-user", async (req, res) => {
   const { callerId, calleeId } = req.body;
-  if (!callerId || !calleeId) return res.status(400).json({ success: false });
+
+  if (!callerId || !calleeId) {
+    return res.status(400).json({ success: false, message: "Missing callerId or calleeId" });
+  }
 
   try {
-    const device = await prisma.device.findUnique({ where: { userId: calleeId } });
-    if (!device) return res.status(404).json({ success: false });
-
-    const payload = { callerId, type: "incoming_call" };
-    let sent = false;
-
-    if (device.voipToken) {
-      const r = await sendVoipPush(device.voipToken, payload);
-      sent = !(r.failed && r.failed.length);
+    const device = await prisma.device.findFirst({ where: { userId: calleeId } });
+    if (!device) {
+      return res.status(404).json({ success: false, message: "Callee has no device token" });
     }
 
-    if (!sent && device.apnsToken) {
-      await sendAlertPush(
+    const payload = { callerId, type: "incoming_call" };
+
+    if (device.voipToken) {
+      const voipResult = await sendVoipPush(device.voipToken, payload);
+      console.log("📡 VoIP result:", JSON.stringify(voipResult, null, 2));
+    } else if (device.apnsToken) {
+      const alertResult = await sendAlertPush(
         device.apnsToken,
         "Prichádzajúci hovor 📞",
         `Volá ti používateľ ${callerId}`,
         payload
       );
+      console.log("📩 Alert result:", JSON.stringify(alertResult, null, 2));
+    } else {
+      console.log("❌ No token available for callee");
     }
 
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
-    console.error("call-user error:", err);
-    res.status(500).json({ success: false });
+    console.error("❌ call-user error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 
 
 
