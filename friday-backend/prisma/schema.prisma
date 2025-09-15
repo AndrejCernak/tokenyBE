@@ -171,9 +171,12 @@ model CallLog {
 }
 
 model Device {
-  id          String   @id @default(cuid())
-  userId      String
-  deviceToken String   @unique
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  userId       String
+  voipToken    String?  @unique   // VoIP push token (pre hovory)
+  apnsToken    String?  @unique   // APNs push token (alert fallback)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
+
 
