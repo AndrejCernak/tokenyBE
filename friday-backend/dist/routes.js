@@ -5,6 +5,8 @@ const { MAX_PRIMARY_TOKENS_PER_USER } = require("./config");
 const { jwtVerify, createRemoteJWKSet } = require("jose");
 const { verifyToken, createClerkClient } = require("@clerk/backend");
 const Stripe = require("stripe");
+const { sendVoipPush } = require("./apns");
+
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY }); // ✅ toto si pridal
@@ -185,6 +187,38 @@ async function getUserIdFromBearer(req) {
   } catch (e) {
     console.error("sync-user error:", e);
     return res.status(500).json({ error: "Server error" });
+  }
+});
+
+  // VoIP push – zavolanie užívateľa
+router.post("/call-user", async (req, res) => {
+  const { callerId, calleeId } = req.body;
+
+  if (!callerId || !calleeId) {
+    return res.status(400).json({ success: false, message: "Missing callerId or calleeId" });
+  }
+
+  try {
+    // nájdi device token toho, komu voláme
+    const device = await prisma.device.findFirst({
+      where: { userId: calleeId },
+    });
+
+    if (!device) {
+      return res.status(404).json({ success: false, message: "Callee has no device token" });
+    }
+
+    // payload – môžeš pridať aj viac info (meno volajúceho, callId atď.)
+    const payload = {
+      callerId,
+      type: "incoming_call",
+    };
+
+    const result = await sendVoipPush(device.deviceToken, payload);
+    return res.json({ success: true, result });
+  } catch (err) {
+    console.error("call-user error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
