@@ -1,4 +1,3 @@
-// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
@@ -49,7 +48,6 @@ model FridayToken {
   minutesRemaining Int                @default(60)
   status           FridayTokenStatus  @default(active)
 
-  // DOPLNENÉ: používaš to v routes.ts → updateMany({ data: { originalPriceEur: ... }})
   originalPriceEur Decimal?           @db.Decimal(10, 2)
 
   ownerId String?        @db.VarChar(191)
@@ -126,7 +124,6 @@ model Transaction {
   @@index([userId, createdAt])
 }
 
-// DOPLNENÉ: chýbal model, keď voláš prisma.fridayPurchaseItem...
 model FridayPurchaseItem {
   id            String      @id @default(cuid()) @db.VarChar(191)
 
@@ -146,19 +143,18 @@ model FridayPurchaseItem {
 model Payment {
   id                  String   @id @default(cuid()) @db.VarChar(191)
   buyerId             String   @db.VarChar(191)
-  listingId           String?  @db.VarChar(191)      // null pri pokladnici
+  listingId           String?  @db.VarChar(191)
   type                String   @db.VarChar(32)       // "treasury" | "listing"
-  quantity            Int?                             // len pri pokladnici
-  year                Int?                             // len pri pokladnici
+  quantity            Int?
+  year                Int?
   amountEur           Decimal  @db.Decimal(10, 2)
-  applicationFeeEur   Decimal? @db.Decimal(10, 2)    // ak budeš mať províziu
+  applicationFeeEur   Decimal? @db.Decimal(10, 2)
   stripeSessionId     String?  @db.VarChar(191)
   stripePaymentIntent String?  @db.VarChar(191)
-  status              String   @db.VarChar(32) @default("pending") // pending | succeeded | failed
+  status              String   @db.VarChar(32) @default("pending")
   createdAt           DateTime @default(now())
   metadata            Json?
 }
-
 
 model CallLog {
   id        String   @id @default(uuid())
@@ -166,17 +162,15 @@ model CallLog {
   advisorId String
   startedAt DateTime
   endedAt   DateTime?
-  duration  Int?      // v sekundách
-  usedToken String?   // ID tokenu, ak bol použitý v piatok
+  duration  Int?
+  usedToken String?
 }
 
 model Device {
-  id           String   @id @default(cuid())
-  userId       String
-  voipToken    String?  @unique   // VoIP push token (pre hovory)
-  apnsToken    String?  @unique   // APNs push token (alert fallback)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String   @unique   // 👈 teraz unikátne
+  voipToken String?  @unique
+  apnsToken String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
-
-
