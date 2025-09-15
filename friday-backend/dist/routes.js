@@ -57,6 +57,29 @@ function fridayRoutes(prisma) {
     });
   }
 
+  // NÁHRADA za pôvodnú verziu s { payload }
+async function getUserIdFromBearer(req) {
+  const auth = req.header("authorization") || req.header("Authorization");
+  if (!auth || !auth.startsWith("Bearer ")) return null;
+
+  const token = auth.slice("Bearer ".length);
+
+  try {
+    // verifyToken vracia priamo claims (nie { payload })
+    const claims = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY,
+      // nič ďalšie sem nedávaj, nech to je čo najtolerantnejšie
+    });
+
+    return claims.sub || null;
+  } catch (e) {
+    console.error("Clerk verifyToken error:", e);
+    return null;
+  }
+}
+
+
+
   // ========== ADMIN ==========
   router.post("/admin/mint", async (req, res) => {
     try {
@@ -92,19 +115,62 @@ function fridayRoutes(prisma) {
     }
   });
 
+  // Nastavenie ceny
+    router.post("/admin/set-price", async (req, res) => {
+        try {
+            const { newPrice, repriceTreasury } = req.body;
+            const price = Number(newPrice);
+            if (!Number.isFinite(price) || price <= 0) {
+                return res.status(400).json({ success: false, message: "Invalid newPrice" });
+            }
+            await prisma.$transaction(async (tx) => {
+                await tx.fridaySettings.upsert({
+                    where: { id: 1 },
+                    update: { currentPriceEur: price },
+                    create: { id: 1, currentPriceEur: price },
+                });
+                if (repriceTreasury) {
+                    await tx.fridayToken.updateMany({
+                        where: { ownerId: null, status: "active" },
+                        data: { originalPriceEur: price },
+                    });
+                }
+            });
+            return res.json({ success: true, priceEur: price });
+        }
+        catch (e) {
+            console.error("POST /friday/admin/set-price", e);
+            return res.status(500).json({ success: false, message: "Server error" });
+        }
+    });
+  
   router.post("/sync-user", async (req, res) => {
-    const userId = await getUserIdFromAuthHeader(req);
-    if (!userId) return res.status(401).json({ error: "Unauthenticated" });
+  const userId = await getUserIdFromBearer(req);
+  if (!userId) return res.status(401).json({ error: "Unauthenticated" });
 
+  try {
+    await ensureUser(userId);
+
+    // (voliteľné) nastav rolu v Clerk, ak chýba
     try {
-      await ensureUser(userId);
-      // sem môžeš dať sync role s Clerk ak potrebuješ
-      return res.json({ ok: true });
+      const u = await clerk.users.getUser(userId);
+      if (!u.publicMetadata?.role) {
+        await clerk.users.updateUser(userId, {
+          publicMetadata: { ...(u.publicMetadata || {}), role: "client" },
+        });
+        console.log(`🔑 Clerk: nastavil som rolu "client" pre user ${userId}`);
+      }
     } catch (e) {
-      console.error("sync-user error:", e);
-      return res.status(500).json({ error: "Server error" });
+      console.error("clerk update role failed:", e);
     }
-  });
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("sync-user error:", e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
 
   // ========== PUBLIC ==========
   router.get("/supply", async (req, res) => {
@@ -134,23 +200,15 @@ function fridayRoutes(prisma) {
   }
 
   try {
-    // 1) Overíme iOS session JWT lokálne
-    const { payload } = await verifyToken(token, {
-      secretKey: process.env.CLERK_SECRET_KEY,
-    });
+    const claims = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+    const userId = claims.sub;
+    if (!userId) return res.status(401).send("❌ Invalid token");
 
-    const userId = payload.sub;
-    if (!userId) {
-      return res.status(401).send("❌ Invalid token");
-    }
-
-    // 2) Vytvoríme jednorazový sign-in ticket
     const { token: signInToken } = await clerk.signInTokens.createSignInToken({
       userId,
       expiresInSeconds: 60,
     });
 
-    // 3) Presmerujeme na frontend callback
     const url = `${process.env.APP_URL}/sso/callback?token=${encodeURIComponent(signInToken)}`;
     return res.redirect(url);
   } catch (err) {
@@ -158,6 +216,7 @@ function fridayRoutes(prisma) {
     return res.status(401).send("❌ Invalid or expired token");
   }
 });
+
 
 
 
