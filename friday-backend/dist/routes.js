@@ -82,22 +82,29 @@ async function getUserIdFromBearer(req) {
 
   router.post("/register-device", async (req, res) => {
   const { userId, voipToken, apnsToken } = req.body;
-  if (!userId) {
-    return res.status(400).json({ success: false, message: "Missing userId" });
+
+  if (!userId || (!voipToken && !apnsToken)) {
+    return res.status(400).json({ success: false, message: "Missing userId or tokens" });
   }
 
   try {
+    let updateData = {};
+    if (voipToken) updateData.voipToken = voipToken;
+    if (apnsToken) updateData.apnsToken = apnsToken;
+
     await prisma.device.upsert({
-      where: { userId },
-      update: { voipToken, apnsToken },
-      create: { userId, voipToken, apnsToken },
+      where: { userId },   // ⚡ teraz hľadáme podľa userId
+      update: updateData,
+      create: { userId, ...updateData },
     });
-    res.json({ success: true });
+
+    return res.json({ success: true });
   } catch (e) {
     console.error("register-device error:", e);
-    res.status(500).json({ success: false });
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 
 
   // ========== ADMIN ==========
