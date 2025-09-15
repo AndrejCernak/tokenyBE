@@ -78,7 +78,24 @@ async function getUserIdFromBearer(req) {
   }
 }
 
+  router.post("/register-device", async (req, res) => {
+  const { userId, deviceToken } = req.body;
+  if (!userId || !deviceToken) {
+    return res.status(400).json({ success: false, message: "Missing userId or deviceToken" });
+  }
 
+  try {
+    await prisma.device.upsert({
+      where: { deviceToken },
+      update: { userId },
+      create: { userId, deviceToken },
+    });
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("register-device error:", e);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
 
   // ========== ADMIN ==========
   router.post("/admin/mint", async (req, res) => {
