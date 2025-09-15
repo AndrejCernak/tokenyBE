@@ -1,16 +1,17 @@
 // apns.js
 const apn = require("apn");
 
-const keyContent = process.env.APN_KEY_CONTENT.replace(/\\n/g, "\n");
-
 const provider = new apn.Provider({
   token: {
-    key: keyContent,
+    key: process.env.APN_KEY_FILE,
     keyId: process.env.APN_KEY_ID,
     teamId: process.env.APN_TEAM_ID,
   },
   production: false,
 });
+
+module.exports = provider;
+
 
 async function sendVoipPush(deviceToken, payload = {}) {
   const note = new apn.Notification();
