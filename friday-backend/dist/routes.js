@@ -211,37 +211,52 @@ router.post("/register-device", async (req, res) => {
   // VoIP push – zavolanie užívateľa
 router.post("/call-user", async (req, res) => {
   const { callerId, calleeId } = req.body;
-  console.log("📞 call-user request:", { callerId, calleeId });
 
-  const device = await prisma.device.findFirst({ where: { userId: calleeId } });
-  if (!device) {
-    console.log("❌ No device found for", calleeId);
-    return res.status(404).json({ success: false });
-  }
-  console.log("📡 Found device for callee:", device);
-
-  // tu skúšame push
-  const payload = { callerId, type: "incoming_call" };
-
-  if (device.voipToken) {
-    const result = await sendVoipPush(device.voipToken, payload);
-    console.log("📡 VoIP result:", JSON.stringify(result, null, 2));
-  }
-  if (device.apnsToken) {
-    const result = await sendAlertPush(
-      device.apnsToken,
-      "Prichádzajúci hovor 📞",
-      `Volá ti používateľ ${callerId}`,
-      payload
-    );
-    console.log("📩 Alert result:", JSON.stringify(result, null, 2));
+  if (!callerId || !calleeId) {
+    return res.status(400).json({ success: false, message: "Missing callerId or calleeId" });
   }
 
-  res.json({ success: true });
+  try {
+    const device = await prisma.device.findFirst({ where: { userId: calleeId } });
+    if (!device) {
+      return res.status(404).json({ success: false, message: "Callee has no device token" });
+    }
+
+    const payload = { callerId, type: "incoming_call" };
+
+    // 👉 vždy sa pokúsime o VoIP push
+    if (device.voipToken) {
+      console.log("📡 Trying VoIP push for:", calleeId);
+      try {
+        const voipResult = await sendVoipPush(device.voipToken, payload);
+        console.log("📡 VoIP result:", JSON.stringify(voipResult, null, 2));
+      } catch (e) {
+        console.error("❌ VoIP push failed:", e);
+      }
+    }
+
+    // 👉 fallback vždy – normálny alert push
+    if (device.apnsToken) {
+      console.log("📩 Sending fallback alert push for:", calleeId);
+      try {
+        const alertResult = await sendAlertPush(
+          device.apnsToken,
+          "Prichádzajúci hovor 📞",
+          `Volá ti používateľ ${callerId}`,
+          payload
+        );
+        console.log("📩 Alert result:", JSON.stringify(alertResult, null, 2));
+      } catch (e) {
+        console.error("❌ Alert push failed:", e);
+      }
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("❌ call-user error:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
 });
-
-
-
 
 
 
