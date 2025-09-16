@@ -79,11 +79,6 @@ async function getUserIdFromBearer(req) {
     return null;
   }
 }
-// routes.js
-import express from "express";
-import { prisma } from "./config.js";  // import Prisma client
-
-const router = express.Router();
 
 router.post("/register-device", async (req, res) => {
   try {
