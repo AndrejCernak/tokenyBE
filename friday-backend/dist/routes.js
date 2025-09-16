@@ -84,15 +84,10 @@ router.post("/register-device", async (req, res) => {
   try {
     const { userId, voipToken, apnsToken } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ error: "Missing userId" });
-    }
+    if (!userId) return res.status(400).json({ error: "Missing userId" });
+    if (!voipToken && !apnsToken) return res.status(400).json({ error: "Missing voipToken or apnsToken" });
 
-    if (!voipToken && !apnsToken) {
-      return res.status(400).json({ error: "Missing voipToken or apnsToken" });
-    }
-
-    // nájdi existujúce zariadenie podľa tokenov
+    // find by token
     let device = await prisma.device.findFirst({
       where: {
         OR: [
@@ -103,24 +98,13 @@ router.post("/register-device", async (req, res) => {
     });
 
     if (device) {
-      // update existujúceho zariadenia
       device = await prisma.device.update({
         where: { id: device.id },
-        data: {
-          userId,
-          voipToken,
-          apnsToken,
-          updatedAt: new Date(),
-        },
+        data: { userId, voipToken, apnsToken, updatedAt: new Date() },
       });
     } else {
-      // vytvor nové zariadenie
       device = await prisma.device.create({
-        data: {
-          userId,
-          voipToken,
-          apnsToken,
-        },
+        data: { userId, voipToken, apnsToken },
       });
     }
 
@@ -131,6 +115,7 @@ router.post("/register-device", async (req, res) => {
     res.status(500).json({ error: "register-device failed" });
   }
 });
+
 
 
 
