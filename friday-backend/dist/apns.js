@@ -13,8 +13,10 @@ const provider = new apn.Provider({
 async function sendVoipPush(deviceToken, payload = {}) {
   const note = new apn.Notification();
   note.payload = payload; // payload sa dostane do didReceiveIncomingPush
-  note.topic = process.env.APN_BUNDLE_ID + ".voip"; // presne ako bundleId v Xcode + .voip
+  note.topic = process.env.APN_BUNDLE_ID + ".voip";
   note.pushType = "voip";
+  console.log("📡 Sending VoIP push with topic:", note.topic, "to:", deviceToken);
+
   note.expiry = Math.floor(Date.now() / 1000) + 30; // expirácia 30s
 
   try {
