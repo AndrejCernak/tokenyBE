@@ -79,9 +79,9 @@ async function getUserIdFromBearer(req) {
     return null;
   }
 }
-
-  router.post("/register-device", async (req, res) => {
+router.post("/register-device", async (req, res) => {
   const { userId, voipToken, apnsToken } = req.body;
+  console.log("📥 register-device request:", req.body);
 
   if (!userId || (!voipToken && !apnsToken)) {
     return res.status(400).json({ success: false, message: "Missing userId or tokens" });
@@ -92,18 +92,20 @@ async function getUserIdFromBearer(req) {
     if (voipToken) updateData.voipToken = voipToken;
     if (apnsToken) updateData.apnsToken = apnsToken;
 
-    await prisma.device.upsert({
-      where: { userId },               // userId je teraz @unique
-      update: updateData,              // ak existuje, update tokenov
-      create: { userId, ...updateData } // inak vytvor nový záznam
+    const device = await prisma.device.upsert({
+      where: { userId },
+      update: updateData,
+      create: { userId, ...updateData },
     });
 
+    console.log("✅ Device saved to DB:", device);
     return res.json({ success: true });
   } catch (e) {
-    console.error("register-device error:", e);
+    console.error("❌ register-device error:", e);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 
 
 
@@ -201,46 +203,35 @@ async function getUserIdFromBearer(req) {
   // VoIP push – zavolanie užívateľa
 router.post("/call-user", async (req, res) => {
   const { callerId, calleeId } = req.body;
+  console.log("📞 call-user request:", { callerId, calleeId });
 
-  if (!callerId || !calleeId) {
-    return res.status(400).json({ success: false, message: "Missing callerId or calleeId" });
+  const device = await prisma.device.findFirst({ where: { userId: calleeId } });
+  if (!device) {
+    console.log("❌ No device found for", calleeId);
+    return res.status(404).json({ success: false });
+  }
+  console.log("📡 Found device for callee:", device);
+
+  // tu skúšame push
+  const payload = { callerId, type: "incoming_call" };
+
+  if (device.voipToken) {
+    const result = await sendVoipPush(device.voipToken, payload);
+    console.log("📡 VoIP result:", JSON.stringify(result, null, 2));
+  }
+  if (device.apnsToken) {
+    const result = await sendAlertPush(
+      device.apnsToken,
+      "Prichádzajúci hovor 📞",
+      `Volá ti používateľ ${callerId}`,
+      payload
+    );
+    console.log("📩 Alert result:", JSON.stringify(result, null, 2));
   }
 
-  try {
-    const device = await prisma.device.findFirst({ where: { userId: calleeId } });
-    if (!device) {
-      return res.status(404).json({ success: false, message: "Callee has no device token" });
-    }
-
-    const payload = { callerId, type: "incoming_call" };
-
-    if (device.voipToken) {
-  const voipResult = await sendVoipPush(device.voipToken, payload);
-  console.log("📡 VoIP result:", JSON.stringify(voipResult, null, 2));
-    }
-    
-    if (device.apnsToken) {
-      const alertResult = await sendAlertPush(
-        device.apnsToken,
-        "Prichádzajúci hovor 📞",
-        `Volá ti používateľ ${callerId}`,
-        {
-          ...payload,
-          type: "incoming_call"
-        }
-      );
-      console.log("📩 Alert result:", JSON.stringify(alertResult, null, 2));
-    }
- else {
-      console.log("❌ No token available for callee");
-    }
-
-    return res.json({ success: true });
-  } catch (err) {
-    console.error("❌ call-user error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
-  }
+  res.json({ success: true });
 });
+
 
 
 
