@@ -215,17 +215,23 @@ router.post("/call-user", async (req, res) => {
     const payload = { callerId, type: "incoming_call" };
 
     if (device.voipToken) {
-      const voipResult = await sendVoipPush(device.voipToken, payload);
-      console.log("📡 VoIP result:", JSON.stringify(voipResult, null, 2));
-    } else if (device.apnsToken) {
+  const voipResult = await sendVoipPush(device.voipToken, payload);
+  console.log("📡 VoIP result:", JSON.stringify(voipResult, null, 2));
+    }
+    
+    if (device.apnsToken) {
       const alertResult = await sendAlertPush(
         device.apnsToken,
         "Prichádzajúci hovor 📞",
         `Volá ti používateľ ${callerId}`,
-        payload
+        {
+          ...payload,
+          type: "incoming_call"
+        }
       );
       console.log("📩 Alert result:", JSON.stringify(alertResult, null, 2));
-    } else {
+    }
+ else {
       console.log("❌ No token available for callee");
     }
 
