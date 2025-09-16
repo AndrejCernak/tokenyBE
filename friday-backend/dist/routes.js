@@ -79,41 +79,63 @@ async function getUserIdFromBearer(req) {
     return null;
   }
 }
+// routes.js
+import express from "express";
+import { prisma } from "./config.js";  // import Prisma client
+
+const router = express.Router();
+
 router.post("/register-device", async (req, res) => {
-  const { userId, voipToken, apnsToken } = req.body;
-
-  if (!userId || (!voipToken && !apnsToken)) {
-    return res.status(400).json({ success: false, message: "Missing userId or tokens" });
-  }
-
   try {
-    const updateData = {};
-    if (voipToken) updateData.voipToken = voipToken;
-    if (apnsToken) updateData.apnsToken = apnsToken;
+    const { userId, voipToken, apnsToken } = req.body;
 
-    // namiesto upsert → skúsiť update, fallback na create
-    const device = await prisma.device.findUnique({ where: { userId } });
-    let saved;
+    if (!userId) {
+      return res.status(400).json({ error: "Missing userId" });
+    }
+
+    if (!voipToken && !apnsToken) {
+      return res.status(400).json({ error: "Missing voipToken or apnsToken" });
+    }
+
+    // nájdi existujúce zariadenie podľa tokenov
+    let device = await prisma.device.findFirst({
+      where: {
+        OR: [
+          voipToken ? { voipToken } : undefined,
+          apnsToken ? { apnsToken } : undefined,
+        ].filter(Boolean),
+      },
+    });
+
     if (device) {
-      saved = await prisma.device.update({
-        where: { userId },
-        data: updateData,
+      // update existujúceho zariadenia
+      device = await prisma.device.update({
+        where: { id: device.id },
+        data: {
+          userId,
+          voipToken,
+          apnsToken,
+          updatedAt: new Date(),
+        },
       });
     } else {
-      saved = await prisma.device.create({
-        data: { userId, ...updateData },
+      // vytvor nové zariadenie
+      device = await prisma.device.create({
+        data: {
+          userId,
+          voipToken,
+          apnsToken,
+        },
       });
     }
 
-    console.log("✅ Device saved to DB:", saved);
-    return res.json({ success: true, device: saved });
-  } catch (e) {
-    console.error("register-device error:", e);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.log("✅ Device saved to DB:", device);
+    res.json({ ok: true, device });
+  } catch (err) {
+    console.error("register-device error:", err);
+    res.status(500).json({ error: "register-device failed" });
   }
 });
-
-
 
 
 
