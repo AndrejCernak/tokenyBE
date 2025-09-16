@@ -12,18 +12,21 @@ const provider = new apn.Provider({
 // VoIP push
 async function sendVoipPush(deviceToken, payload = {}) {
   const note = new apn.Notification();
-  note.payload = payload; // <-- použijeme payload namiesto rawPayload
-  note.topic = process.env.APN_BUNDLE_ID + ".voip";
+  note.payload = payload; // payload sa dostane do didReceiveIncomingPush
+  note.topic = process.env.APN_BUNDLE_ID + ".voip"; // presne ako bundleId v Xcode + .voip
   note.pushType = "voip";
-  note.expiry = Math.floor(Date.now() / 1000) + 30; // notifikácia exp. po 30s
+  note.expiry = Math.floor(Date.now() / 1000) + 30; // expirácia 30s
 
   try {
-    return await provider.send(note, deviceToken);
+    const result = await provider.send(note, deviceToken);
+    console.log("📡 APNs response:", JSON.stringify(result, null, 2));
+    return result;
   } catch (err) {
     console.error("❌ VoIP push error:", err);
     throw err;
   }
 }
+
 
 // Alert push
 async function sendAlertPush(deviceToken, title, body, payload = {}) {
