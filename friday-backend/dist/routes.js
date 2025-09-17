@@ -357,8 +357,15 @@ router.post("/call-user", async (req, res) => {
     // Štart hovoru
 
     // Štart hovoru
+// Štart hovoru
 router.post("/calls/start", async (req, res) => {
   const { callerId, advisorId } = req.body;
+
+  if (!callerId || !advisorId) {
+    return res.status(400).json({ success: false, message: "Missing callerId/advisorId" });
+  }
+
+  // piatková logika (ak chceš)
   const today = new Date();
   const isFriday = today.getDay() === 5;
   let usedToken = null;
@@ -371,45 +378,37 @@ router.post("/calls/start", async (req, res) => {
       return res.status(403).json({ success: false, message: "V piatok potrebuješ token." });
     }
     usedToken = token.id;
-    await prisma.fridayToken.update({
-      where: { id: token.id },
-      data: { status: "spent" },
-    });
+    await prisma.fridayToken.update({ where: { id: token.id }, data: { status: "spent" } });
   }
 
-  // log hovoru
+  // založ call log
   const call = await prisma.callLog.create({
-    data: {
-      callerId,
-      advisorId,
-      startedAt: new Date(),
-      usedToken,
-    },
+    data: { callerId, advisorId, startedAt: new Date(), usedToken },
   });
 
-  // získať device token admina
-  const device = await prisma.device.findUnique({
-    where: { userId: advisorId },
-  });
-
+  // nájdi zariadenie poradcu
+  const device = await prisma.device.findUnique({ where: { userId: advisorId } });
   if (!device?.voipToken) {
-    console.error("❌ No device registered for advisor", advisorId);
+    console.error("❌ No VoIP token for advisor", advisorId);
     return res.status(404).json({ success: false, message: "Advisor not registered for VoIP" });
   }
 
+  // POŠLI VoIP push s callId + callerId (KRITICKÉ)
+  console.log("📡 [VoIP] Sending to", advisorId, "callId:", call.id);
   try {
-    console.log("📡 [VoIP] Sending push to advisor", advisorId);
     const result = await sendVoipPush(device.voipToken, {
-      callerId,
+      type: "incoming_call",
       callId: call.id,
+      callerId, // posielaj user.id volajúceho (nie username)
     });
-    console.log("📡 [VoIP] APNs response:", JSON.stringify(result, null, 2));
-  } catch (err) {
-    console.error("❌ Error sending VoIP push:", err);
+    console.log("📡 [VoIP] APNs:", JSON.stringify(result, null, 2));
+  } catch (e) {
+    console.error("❌ VoIP push err:", e);
   }
 
   return res.json({ success: true, callId: call.id });
 });
+
 
     // Ukončenie hovoru
     router.post("/calls/end", async (req, res) => {
