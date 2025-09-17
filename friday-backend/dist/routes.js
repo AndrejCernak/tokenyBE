@@ -411,30 +411,6 @@ router.post("/calls/start", async (req, res) => {
   return res.json({ success: true, callId: call.id });
 });
 
-    
-      // nájdi device admina
-      const device = await prisma.device.findUnique({ where: { userId: advisorId } });
-    
-      if (!device || !device.voipToken) {
-        console.error("❌ No device registered for advisor", advisorId);
-        return res.status(404).json({ success: false, message: "Advisor not registered for VoIP" });
-      }
-    
-      // pošli VoIP push
-      try {
-        console.log("📡 [VoIP] Sending push to advisor", advisorId);
-        const result = await sendVoipPush(device.voipToken, {
-          callerId,
-          callId: call.id,
-        });
-        console.log("📡 [VoIP] APNs response:", JSON.stringify(result, null, 2));
-      } catch (err) {
-        console.error("❌ Error sending VoIP push:", err);
-      }
-    
-      return res.json({ success: true, callId: call.id });
-    });
-
     // Ukončenie hovoru
     router.post("/calls/end", async (req, res) => {
         const { callId } = req.body;
