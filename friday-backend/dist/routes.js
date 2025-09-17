@@ -146,6 +146,18 @@ router.post("/register-device", async (req, res) => {
     }
   });
 
+router.post("/debug-log", async (req, res) => {
+  try {
+    const { msg, time, userId } = req.body;
+    console.log("📜 iOS DEBUG:", time, userId || "-", msg);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ debug-log error:", err);
+    res.status(500).json({ ok: false });
+  }
+});
+
+  
   // Nastavenie ceny
     router.post("/admin/set-price", async (req, res) => {
         try {
