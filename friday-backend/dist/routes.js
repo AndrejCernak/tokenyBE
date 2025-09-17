@@ -357,36 +357,50 @@ router.post("/call-user", async (req, res) => {
     // Štart hovoru
 
     router.post("/calls/start", async (req, res) => {
-      const { callerId, advisorId } = req.body;
-      const today = new Date();
-      const isFriday = today.getDay() === 5; // 5 = piatok
-      let usedToken = null;
-    
-      if (isFriday) {
-        // klient musí mať token
-        const token = await prisma.fridayToken.findFirst({
-          where: { ownerId: callerId, status: "active", minutesRemaining: { gt: 0 } },
-        });
-        if (!token) {
-          return res.status(403).json({ success: false, message: "V piatok potrebuješ token." });
-        }
-        usedToken = token.id;
-        // token spotrebujeme
-        await prisma.fridayToken.update({
-          where: { id: token.id },
-          data: { status: "spent" },
-        });
-      }
-    
-      // log hovoru
-      const call = await prisma.callLog.create({
-        data: {
-          callerId,
-          advisorId,
-          startedAt: new Date(),
-          usedToken,
-        },
+    const { callerId, advisorId } = req.body;
+    const today = new Date();
+    const isFriday = today.getDay() === 5;
+    let usedToken = null;
+  
+    if (isFriday) {
+      const token = await prisma.fridayToken.findFirst({
+        where: { ownerId: callerId, status: "active", minutesRemaining: { gt: 0 } },
       });
+      if (!token) {
+        return res.status(403).json({ success: false, message: "V piatok potrebuješ token." });
+      }
+      usedToken = token.id;
+      await prisma.fridayToken.update({
+        where: { id: token.id },
+        data: { status: "spent" },
+      });
+    }
+  
+    // log hovoru
+    const call = await prisma.callLog.create({
+      data: {
+        callerId,
+        advisorId,
+        startedAt: new Date(),
+        usedToken,
+      },
+    });
+
+  // získať device token admina
+  const device = await prisma.device.findUnique({
+    where: { userId: advisorId },
+  });
+
+  if (device?.voipToken) {
+    // pošli VoIP push s callId a callerId
+    await sendVoipPush(device.voipToken, {
+      callId: call.id,
+      callerId,
+    });
+  }
+
+  return res.json({ success: true, callId: call.id });
+});
     
       // nájdi device admina
       const device = await prisma.device.findUnique({ where: { userId: advisorId } });
