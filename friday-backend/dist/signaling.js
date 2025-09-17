@@ -28,25 +28,63 @@ wss.on("connection", (ws) => {
   console.log("🔌 New WebSocket connection");
 
   ws.on("message", (msg) => {
-    try {
-      const data = JSON.parse(msg.toString());
+  try {
+    const data = JSON.parse(msg.toString());
+    const { type, callId, callerId, targetId, sdp, candidate, sdpMid, sdpMLineIndex } = data;
 
-      if (data.type === "register") {
+    switch (type) {
+      // registrácia klienta
+      case "register":
         clients[data.userId] = ws;
         console.log(`✅ Registered user: ${data.userId}`);
-      }
+        break;
 
-      if (["offer", "answer", "ice"].includes(data.type)) {
-        const target = clients[data.targetId];
+      // klient spustil hovor → pošli adminovi incoming-call
+      case "call":
+        if (clients[targetId]) {
+          clients[targetId].send(
+            JSON.stringify({ type: "incoming-call", callerId, callId })
+          );
+          console.log(`📲 Incoming call from ${callerId} to ${targetId} (callId=${callId})`);
+        }
+        break;
+
+      // admin prijal hovor → späť klientovi
+      case "accept":
+        if (clients[targetId]) {
+          clients[targetId].send(JSON.stringify({ type: "call-accepted", callId }));
+          console.log(`✅ Call accepted (callId=${callId})`);
+        }
+        break;
+
+      // admin/klient položil → druhému pošli call-ended
+      case "hangup":
+        if (clients[targetId]) {
+          clients[targetId].send(JSON.stringify({ type: "call-ended", callId }));
+          console.log(`❌ Call ended (callId=${callId})`);
+        }
+        break;
+
+      // WebRTC výmena
+      case "offer":
+      case "answer":
+      case "candidate": {
+        const target = clients[targetId];
         if (target) {
           target.send(JSON.stringify({ ...data, from: data.userId }));
-          console.log(`➡️ Forwarded ${data.type} from ${data.userId} to ${data.targetId}`);
+          console.log(`➡️ Forwarded ${type} from ${data.userId} to ${targetId}`);
         }
+        break;
       }
-    } catch (e) {
-      console.error("WS error:", e);
+
+      default:
+        console.log("ℹ️ Unknown type:", data);
     }
-  });
+  } catch (e) {
+    console.error("WS error:", e);
+  }
+});
+
 
   ws.on("close", () => {
     for (const id in clients) {
