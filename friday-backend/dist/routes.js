@@ -95,9 +95,12 @@ router.post("/register-device", async (req, res) => {
         data: { userId, voipToken, updatedAt: new Date() },
       });
     } else {
-      device = await prisma.device.create({
-        data: { userId, voipToken },
-      });
+      device = await prisma.device.upsert({
+      where: { userId }, // unikátne pole
+      update: { voipToken, updatedAt: new Date() },
+      create: { userId, voipToken },
+    });
+
     }
 
     console.log("✅ Device saved:", device);
