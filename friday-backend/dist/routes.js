@@ -359,49 +359,33 @@ router.post("/call-user", async (req, res) => {
     // Štart hovoru
 // Štart hovoru
 router.post("/calls/start", async (req, res) => {
-  const { callerId, advisorId } = req.body;
+  const { callerId, callerName, advisorId } = req.body;
 
   if (!callerId || !advisorId) {
     return res.status(400).json({ success: false, message: "Missing callerId/advisorId" });
   }
 
-  // piatková logika (ak chceš)
-  const today = new Date();
-  const isFriday = today.getDay() === 5;
-  let usedToken = null;
-
-  if (isFriday) {
-    const token = await prisma.fridayToken.findFirst({
-      where: { ownerId: callerId, status: "active", minutesRemaining: { gt: 0 } },
-    });
-    if (!token) {
-      return res.status(403).json({ success: false, message: "V piatok potrebuješ token." });
-    }
-    usedToken = token.id;
-    await prisma.fridayToken.update({ where: { id: token.id }, data: { status: "spent" } });
-  }
-
   // založ call log
   const call = await prisma.callLog.create({
-    data: { callerId, advisorId, startedAt: new Date(), usedToken },
+    data: { callerId, advisorId, startedAt: new Date(), usedToken: null },
   });
 
   // nájdi zariadenie poradcu
   const device = await prisma.device.findUnique({ where: { userId: advisorId } });
   if (!device?.voipToken) {
-    console.error("❌ No VoIP token for advisor", advisorId);
     return res.status(404).json({ success: false, message: "Advisor not registered for VoIP" });
   }
 
-  // POŠLI VoIP push s callId + callerId (KRITICKÉ)
-  console.log("📡 [VoIP] Sending to", advisorId, "callId:", call.id);
+  // 🚀 pošli callerName do pushu
+  const payload = {
+    type: "incoming_call",
+    callId: call.id,
+    callerId,
+    callerName: callerName || callerId, // fallback ak nie je username
+  };
+
   try {
-    const result = await sendVoipPush(device.voipToken, {
-      type: "incoming_call",
-      callId: call.id,
-      callerId, // posielaj user.id volajúceho (nie username)
-    });
-    console.log("📡 [VoIP] APNs:", JSON.stringify(result, null, 2));
+    await sendVoipPush(device.voipToken, payload);
   } catch (e) {
     console.error("❌ VoIP push err:", e);
   }
