@@ -315,8 +315,8 @@ router.post("/call-user", async (req, res) => {
             const ownedThisYear = await prisma.fridayToken.count({
                 where: { ownerId: userId, issuedYear: y, status: { in: ["active", "listed"] } },
             });
-            if (ownedThisYear + quantity > config_1.MAX_PRIMARY_TOKENS_PER_USER) {
-                return res.status(400).json({ message: `Primary limit is ${config_1.MAX_PRIMARY_TOKENS_PER_USER} tokens per user for year ${y}` });
+            if (ownedThisYear + quantity > MAX_PRIMARY_TOKENS_PER_USER) {
+                return res.status(400).json({ message: `Primary limit is ${MAX_PRIMARY_TOKENS_PER_USER} tokens per user for year ${y}` });
             }
             // dostupnosť v pokladnici – rovnaké kritérium ako v /purchase
             const available = await prisma.fridayToken.count({ where: { ownerId: null, issuedYear: y, status: "active" } });
@@ -505,10 +505,10 @@ router.post("/calls/start", async (req, res) => {
             const ownedThisYear = await prisma.fridayToken.count({
                 where: { ownerId: userId, issuedYear: y, status: { in: ["active", "listed"] } },
             });
-            if (ownedThisYear + quantity > config_1.MAX_PRIMARY_TOKENS_PER_USER) {
+            if (ownedThisYear + quantity > MAX_PRIMARY_TOKENS_PER_USER) {
                 return res.status(400).json({
                     success: false,
-                    message: `Primary limit is ${config_1.MAX_PRIMARY_TOKENS_PER_USER} tokens per user for year ${y}`,
+                    message: `Primary limit is ${MAX_PRIMARY_TOKENS_PER_USER} tokens per user for year ${y}`,
                 });
             }
             // vezmi dostupné tokeny z pokladnice
