@@ -231,7 +231,12 @@ router.post("/call-user", async (req, res) => {
       return res.status(404).json({ success: false, message: "Callee has no VoIP token" });
     }
 
-    const payload = { callerId, type: "incoming_call" };
+    const payload = { 
+      type: "incoming_call",
+      callerId,
+      callerName: req.body.callerName || callerId // 👈 pridaj username
+    };
+
 
     console.log("📡 Sending VoIP push to:", calleeId);
     const voipResult = await sendVoipPush(device.voipToken, payload);
@@ -378,11 +383,12 @@ router.post("/calls/start", async (req, res) => {
 
   // 🚀 pošli callerName do pushu
   const payload = {
-    type: "incoming_call",
-    callId: call.id,
-    callerId,
-    callerName: callerName || callerId, // fallback ak nie je username
-  };
+  type: "incoming_call",
+  callId: call.id,
+  callerId,
+  callerName: callerName || "Unknown" // 👈 nikdy nepadaj na userId
+};
+
 
   try {
     await sendVoipPush(device.voipToken, payload);
