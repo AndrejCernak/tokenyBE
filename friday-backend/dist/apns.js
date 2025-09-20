@@ -6,7 +6,7 @@ const provider = new apn.Provider({
     keyId: process.env.APN_KEY_ID,
     teamId: process.env.APN_TEAM_ID,
   },
-  production: false,
+  production: true,
 });
 
 async function sendVoipPush(deviceToken, payload = {}) {
