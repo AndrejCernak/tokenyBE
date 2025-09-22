@@ -113,6 +113,22 @@ router.post("/register-device", async (req, res) => {
 
 
 
+  router.get("/admin/clients", async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        devices: { select: { voipToken: true, updatedAt: true } }, // devices via Device model
+        tokens: { select: { minutesRemaining: true, status: true } }
+      },
+    });
+    res.json({ success: true, clients: users });
+  } catch (err) {
+    console.error("❌ GET /admin/clients error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
 
   // ========== ADMIN ==========
   router.post("/admin/mint", async (req, res) => {
