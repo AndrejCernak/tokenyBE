@@ -33,7 +33,10 @@ model User {
   tradesBought  FridayTrade[]    @relation("TradeBuyer")
   transactions  Transaction[]
   purchaseItems FridayPurchaseItem[]
+
+  devices       Device[]   // 👈 toto už Prisma pochopí
 }
+
 
 model FridaySettings {
   id              Int       @id  // používaj fixne id=1
@@ -168,9 +171,12 @@ model CallLog {
 
 model Device {
   id        String   @id @default(cuid())
-  userId    String   @unique   // 👈 teraz unikátne
+  userId    String   @unique
   voipToken String?  @unique
   apnsToken String?  @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // 👇 pridaj toto:
+  user User @relation(fields: [userId], references: [id])
 }
