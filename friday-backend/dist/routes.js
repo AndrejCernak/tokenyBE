@@ -118,11 +118,29 @@ router.post("/register-device", async (req, res) => {
     const users = await prisma.user.findMany({
       select: {
         id: true,
-        devices: { select: { voipToken: true, updatedAt: true } }, // devices via Device model
+        devices: { select: { voipToken: true, updatedAt: true } },
         tokens: { select: { minutesRemaining: true, status: true } }
       },
     });
-    res.json({ success: true, clients: users });
+
+    // dotiahni username pre každého usera
+    const enriched = await Promise.all(
+      users.map(async (u) => {
+        let username = null;
+        try {
+          const clerkUser = await clerkClient.users.getUser(u.id);
+          username =
+            clerkUser.username ||
+            clerkUser.firstName ||
+            clerkUser.emailAddresses[0]?.emailAddress;
+        } catch (e) {
+          console.warn("⚠️ Clerk fetch fail pre userId", u.id, e.message);
+        }
+        return { ...u, username };
+      })
+    );
+
+    res.json({ success: true, clients: enriched });
   } catch (err) {
     console.error("❌ GET /admin/clients error:", err);
     res.status(500).json({ success: false, message: "Server error" });
