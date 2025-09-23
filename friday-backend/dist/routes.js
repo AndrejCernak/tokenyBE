@@ -128,7 +128,7 @@ router.post("/register-device", async (req, res) => {
       users.map(async (u) => {
         let username = null;
         try {
-          const clerkUser = await clerkClient.users.getUser(u.id);
+          const clerkUser = await clerk.users.getUser(u.id); // 👈 zmena
           username =
             clerkUser.username ||
             clerkUser.firstName ||
@@ -146,6 +146,7 @@ router.post("/register-device", async (req, res) => {
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
+
 
 
   // ========== ADMIN ==========
