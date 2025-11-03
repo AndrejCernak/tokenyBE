@@ -734,34 +734,114 @@ router.post("/calls/start", async (req, res) => {
             return res.status(500).json({ success: false, message: "Server error" });
         }
     });
-    // Zrušenie listingu
-    router.post("/cancel-listing", async (req, res) => {
-        try {
-            const { sellerId, listingId } = (req.body || {});
-            const listing = await prisma.fridayListing.findUnique({
-                where: { id: listingId },
-                include: { token: true },
-            });
-            if (!listing || listing.sellerId !== sellerId || listing.status !== "open") {
-                return res.status(400).json({ success: false, message: "Listing not cancellable" });
-            }
-            await prisma.$transaction(async (tx) => {
-                await tx.fridayListing.update({
-                    where: { id: listingId },
-                    data: { status: "cancelled", closedAt: new Date() },
-                });
-                await tx.fridayToken.update({
-                    where: { id: listing.tokenId },
-                    data: { status: "active" },
-                });
-            });
-            return res.json({ success: true });
-        }
-        catch (e) {
-            console.error("POST /cancel-listing", e);
-            return res.status(500).json({ success: false, message: "Server error" });
-        }
+
+  // História všetkých transakcií používateľa
+router.get("/history/:userId", async (req, res) => {
+  const { userId } = req.params;
+
+  try {
+    const [purchases, trades] = await Promise.all([
+      prisma.fridayPurchaseItem.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          createdAt: true,
+          unitPriceEur: true,
+          token: { select: { issuedYear: true } },
+        },
+      }),
+      prisma.fridayTrade.findMany({
+        where: {
+          OR: [{ buyerId: userId }, { sellerId: userId }],
+        },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          createdAt: true,
+          priceEur: true,
+          sellerId: true,
+          buyerId: true,
+          token: { select: { issuedYear: true } },
+        },
+      }),
+    ]);
+
+    // transformácia do jednotného formátu
+    const items = [
+      ...purchases.map((p) => ({
+        id: `purchase-${p.id}`,
+        type: "purchase",
+        direction: "buy",
+        price: Number(p.unitPriceEur),
+        year: p.token.issuedYear,
+        createdAt: p.createdAt,
+      })),
+      ...trades.map((t) => ({
+        id: `trade-${t.id}`,
+        type: "trade",
+        direction: t.sellerId === userId ? "sell" : "buy",
+        price: Number(t.priceEur),
+        year: t.token.issuedYear,
+        createdAt: t.createdAt,
+      })),
+    ];
+
+    // zoradené podľa dátumu
+    items.sort((a, b) => b.createdAt - a.createdAt);
+
+    return res.json({ success: true, items });
+  } catch (e) {
+    console.error("❌ GET /friday/history error:", e);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+  // Zrušenie vlastného listingu
+router.post("/cancel-listing", async (req, res) => {
+  const { sellerId, listingId } = req.body || {};
+
+  if (!sellerId || !listingId) {
+    return res.status(400).json({ success: false, message: "Missing sellerId/listingId" });
+  }
+
+  try {
+    const listing = await prisma.fridayListing.findUnique({
+      where: { id: listingId },
+      include: { token: true },
     });
+
+    if (!listing) {
+      return res.status(404).json({ success: false, message: "Listing not found" });
+    }
+
+    if (listing.sellerId !== sellerId) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+    }
+
+    if (listing.status !== "open") {
+      return res.status(400).json({ success: false, message: "Listing is not open" });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.fridayListing.update({
+        where: { id: listingId },
+        data: { status: "cancelled", closedAt: new Date() },
+      });
+
+      await tx.fridayToken.update({
+        where: { id: listing.tokenId },
+        data: { status: "active" },
+      });
+    });
+
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("❌ POST /friday/cancel-listing error:", e);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
     // Zoznam otvorených ponúk
     router.get("/listings", async (_req, res) => {
         try {
