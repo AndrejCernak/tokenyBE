@@ -710,30 +710,49 @@ router.post("/calls/start", async (req, res) => {
     });
     // Zalistovanie tokenu
     router.post("/list", async (req, res) => {
-        try {
-            const { sellerId, tokenId, priceEur } = (req.body || {});
-            const price = Number(priceEur);
-            if (!sellerId || !tokenId || !Number.isFinite(price) || price <= 0) {
-                return res.status(400).json({ success: false, message: "Missing or invalid fields" });
-            }
-            const token = await prisma.fridayToken.findUnique({ where: { id: tokenId } });
-            if (!token || token.ownerId !== sellerId) {
-                return res.status(400).json({ success: false, message: "Token not owned by seller" });
-            }
-            if (token.status !== "active" || token.minutesRemaining <= 0) {
-                return res.status(400).json({ success: false, message: "Token not listable" });
-            }
-            await prisma.$transaction(async (tx) => {
-                await tx.fridayToken.update({ where: { id: tokenId }, data: { status: "listed" } });
-                await tx.fridayListing.create({ data: { tokenId, sellerId, priceEur: new client_1.Prisma.Decimal(price) } });
-            });
-            return res.json({ success: true });
-        }
-        catch (e) {
-            console.error("POST /list", e);
-            return res.status(500).json({ success: false, message: "Server error" });
-        }
+  try {
+    console.log("LIST REQUEST:", req.body);
+    const { sellerId, tokenId, priceEur } = req.body;
+
+    // nájdi token
+    const token = await prisma.fridayToken.findUnique({ where: { id: tokenId } });
+    console.log("FOUND TOKEN:", token);
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: "Token not found" });
+    }
+
+    if (token.ownerId !== sellerId) {
+      return res.status(403).json({ success: false, message: "Token does not belong to seller" });
+    }
+
+    if (token.status !== "active") {
+      return res.status(400).json({ success: false, message: "Token not active" });
+    }
+
+    // vytvor listing
+    const listing = await prisma.fridayListing.create({
+      data: {
+        tokenId,
+        sellerId,
+        priceEur,
+        status: "open",
+      },
     });
+
+    // označ token ako listed
+    await prisma.fridayToken.update({
+      where: { id: tokenId },
+      data: { status: "listed" },
+    });
+
+    res.json({ success: true, listing });
+  } catch (err) {
+    console.error("LIST ERROR:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 
   // História všetkých transakcií používateľa
 router.get("/history/:userId", async (req, res) => {
